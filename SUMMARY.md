@@ -1,0 +1,18 @@
+# Table of contents
+
+* [Reinforcement Learning Workshop: From Basics to Rocket League Bots](README.md)
+* [University-Level RL Course: Creation Notes & Extension Guidelines](CREATION_NOTES.md)
+* [Getting Started with the RL Workshop](GETTING_STARTED.md)
+* [Lesson 1: Python Fundamentals and Scientific Computing with NumPy](lesson_01_python_numpy.md)
+* [Lesson 2: Introduction to PyTorch](lesson_02_pytorch_intro.md)
+* [Lesson 3: Supervised Learning Fundamentals](lesson_03_supervised_learning.md)
+* [Lesson 4: Building and Training a Simple Classifier](lesson_04_classifier.md)
+* [Lesson 5: Reinforcement Learning Theory - MDPs and Bellman Equations](lesson_05_rl_theory.md)
+* [Lesson 6: Tabular Q-Learning Implementation](lesson_06_tabular_qlearning.md)
+* [Lesson 7: Deep Q-Networks (DQN)](lesson_07_dqn.md)
+* [Lesson 8: Policy Gradient Methods and PPO](lesson_08_policy_gradients.md)
+* [Lesson 9: OpenAI Gym and Continuous Control](lesson_09_gym_continuous.md)
+* [Lesson 10: Game State Representation and Feature Engineering](lesson_10_game_states.md)
+* [Lesson 11: Advanced RL Concepts](lesson_11_advanced_rl.md)
+* [Lesson 12: Building a Complete 2D/3D Game Agent](lesson_12_complete_agent.md)
+* [Lesson 13: Scaling to Rocket League - Building Complex Game AI](lesson_13_rocket_league.md)
