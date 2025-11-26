@@ -16,92 +16,192 @@
 
 ## 📖 Theory
 
+If you encounter unfamiliar ML, deep learning, or RL terms in this lesson, see the [Glossary](GLOSSARY.md) for quick definitions and links to the relevant lessons.
+
 ### Why Function Approximation?
 
-Tabular Q-learning stores Q(s,a) for every state-action pair.
+In tabular Q-learning we had a neat table `Q[s, a]` with one entry per state–action pair.
+That worked because the environments were **tiny** (e.g., GridWorld, FrozenLake).
 
-**Problems with large state spaces:**
-- Atari games: 210×160×3 ≈ 10^{67000} possible states
-- Cannot store in memory
-- Never see same state twice → no learning
+For games like **Atari** or **Rocket League** the "state" is often an image or a large
+feature vector:
 
-**Solution:** Use a neural network Q_θ(s,a) to approximate Q*(s,a)
+- Atari: `210 × 160 × 3` pixels  →  roughly \(10^{67\,000}\) possible images
+- Rocket League: continuous positions, velocities, rotations for every car and the ball
+
+We will basically **never** see the exact same state twice, so:
+
+- A literal table `Q[s, a]` would be astronomically large
+- Even if we could store it, each entry would be visited only a handful of times
+
+Instead we use a **function approximator**, usually a neural network
+\(Q_\theta(s, a)\), which takes in a *description* of the state (pixels or features)
+and outputs Q-values for all actions. The idea is that **similar states should have
+similar Q-values**, and a neural network can generalize this smoothly.
+
+You can think of the network as learning a **compressed representation** of the world:
+
+- Early layers learn visual/feature patterns
+- Later layers learn "how good" different regions of the state space are for each action
 
 ### The Deadly Triad
 
-Three things that cause instability when combined:
-1. **Function approximation** (neural networks)
-2. **Bootstrapping** (TD learning)
-3. **Off-policy learning** (Q-learning)
+Deep Q-learning is powerful but unstable. Three ingredients are especially dangerous
+when combined (Sutton & Barto call this the **deadly triad**):
 
-DQN uses all three! Solutions needed:
+1. **Function approximation**  (neural network instead of table)
+2. **Bootstrapping**            (targets depend on current value estimates)
+3. **Off-policy learning**      (learning about a greedy policy while behaving b5-greedy)
+
+Plain "deep Q-learning" (no tricks) tends to **diverge**: Q-values explode, loss becomes
+NaN, and performance collapses. DQN introduces two key stabilizing tricks that directly
+attack this instability: **experience replay** and **target networks**.
 
 ### Experience Replay
 
-**Problem:** Consecutive samples are correlated
-**Solution:** Store transitions in replay buffer, sample randomly
+In an online RL loop, consecutive transitions
+
+```text
+(s_t, a_t, r_t, s_{t+1}), (s_{t+1}, a_{t+1}, r_{t+1}, s_{t+2}), ...
+```
+
+are **highly correlated**. Stochastic gradient descent expects batches of roughly
+independent samples; feeding it strongly correlated data can make optimization unstable.
+
+**Idea:** store past transitions in a **replay buffer** and sample random mini-batches.
 
 ```python
 buffer = []
 ...
-buffer.append((s, a, r, s', done))
+buffer.append((s, a, r, s_next, done))
 batch = random_sample(buffer, batch_size)
 ```
 
-**Benefits:**
-- Breaks correlation
-- Reuse experiences (sample efficiency)
-- Smooths out learning
+Benefits:
+
+- Breaks short-term correlation between samples
+- Allows **re-use** of past experience (better sample efficiency)
+- Averages over many transitions, which **smooths** updates
 
 ### Target Networks
 
-**Problem:** Target changes every update (moving target)
-**Solution:** Separate target network, update periodically
+In vanilla deep Q-learning the target for a given sample is
+
+```text
+y = r + γ max_a' Q_θ(s', a')
+```
+
+But the same parameters \(\theta\) appear **on both sides** of the loss:
+
+```text
+loss = (Q_θ(s, a) − y)²
+```
+
+When we update \(\theta\), we simultaneously change both the prediction and the target,
+which can lead to wild oscillations.
+
+**Target network idea:** keep a **separate, slower-moving copy** of the network for
+computing targets.
 
 ```python
-# Main network (updated every step)
-Q_θ(s,a)
+# Main network (updated every gradient step)
+Q_theta(s, a)
 
-# Target network (updated every C steps)
-Q_θ'(s',a') ← Q_θ(s',a')
+# Target network (updated only occasionally)
+Q_theta_target(s, a)
 ```
 
-**Update rule:**
-```
-y = r + γ max_a' Q_θ'(s',a')  // Use target network
-loss = (Q_θ(s,a) - y)²
+We then use
+
+```text
+y = r + γ max_a' Q_theta_target(s', a')
+loss = (Q_theta(s, a) − y)²
 ```
 
-### DQN Algorithm
+Every C steps we copy the weights:
 
+```python
+Q_theta_target.load_state_dict(Q_theta.state_dict())
 ```
-Initialize Q_θ, target Q_θ', replay buffer D
-For episode = 1..M:
-    Reset environment, get state s
-    For t = 1..T:
-        Select action: a = ε-greedy(Q_θ(s,·))
-        Execute a, observe r, s'
-        Store (s,a,r,s') in D
-        Sample mini-batch from D
-        Compute targets: y = r + γ max_a' Q_θ'(s',a')
-        Update Q_θ: θ ← θ - α∇(Q_θ(s,a) - y)²
-        Every C steps: θ' ← θ
+
+This makes the target change **slowly and smoothly**, which greatly stabilizes learning.
+
+### DQN Algorithm (Putting It Together)
+
+High-level pseudocode:
+
+```text
+Initialize Q_θ, target network Q_θ', and replay buffer D
+For each episode:
+    reset env, get initial state s
+    for t = 1..T:
+        # 1. Act with ε-greedy policy
+        choose a from Q_θ(s, ·) with ε-greedy exploration
+
+        # 2. Step environment
+        execute a, observe r, s', done
+        store (s, a, r, s', done) in D
+
+        # 3. Learn from a random mini-batch
+        sample (s_b, a_b, r_b, s'_b, done_b) from D
+        compute targets using Q_θ'(s'_b, ·)
+        update Q_θ by minimizing squared TD error
+
+        # 4. Occasionally update target network
+        every C steps: copy Q_θ into Q_θ'
+
         s ← s'
+        if done: break
 ```
 
-### Improvements
+Try to read this together with your implementation below and match each line of
+pseudocode to actual code. That mapping is a great way to check your understanding.
 
-**Double DQN:**
-- Reduces overestimation bias
-- Select action with Q_θ, evaluate with Q_θ'
+### Popular Improvements
 
-**Dueling DQN:**
-- Split network: V(s) + A(s,a)
-- Better for states where actions don't matter
+**Double DQN – reduce overestimation bias**
 
-**Prioritized Experience Replay:**
-- Sample important transitions more often
-- Weight by TD error
+Vanilla DQN uses `max_a' Q_θ'(s', a')` in the target. The `max` tends to introduce a
+systematic **positive bias** (we might pick actions whose Q-values are accidentally high).
+
+Double DQN decouples **action selection** and **action evaluation**:
+
+```text
+a*_next   = argmax_a Q_θ(s', a)          # use online net to choose action
+target_Q  = Q_θ'(s', a*_next)            # use target net to evaluate it
+y = r + γ * target_Q
+```
+
+This simple change often improves stability and final performance.
+
+**Dueling DQN – separate "how good is this state" from "which action"**
+
+Some states are good or bad regardless of which action you take (e.g., already scored a
+goal). In those cases it is wasteful to learn separate Q-values for every action.
+
+Dueling networks decompose
+
+```text
+Q(s, a) = V(s) + A(s, a)
+```
+
+where
+
+- `V(s)` is the **state value** (how good is this state overall?)
+- `A(s, a)` is the **advantage** of action `a` in state `s`
+
+This architecture can learn more efficiently in many environments.
+
+**Prioritized Experience Replay – focus on important transitions**
+
+In standard replay we sample uniformly from the buffer. Prioritized Replay instead
+samples transitions with probability roughly proportional to the **magnitude of their
+TD error**.
+
+- Large TD error → we were very surprised → likely to learn a lot → sample more often
+- Small TD error → we already understand this transition → sample less often
+
+This can accelerate learning, especially in sparse-reward tasks.
 
 ## 💻 Practical Implementation
 

@@ -78,6 +78,8 @@ print("\n🎉 Setup complete! You're ready to start learning.")
 
 **For each lesson:**
 
+Before you dive in, remember that any unfamiliar ML, deep learning, or RL terms are defined in the [Glossary](GLOSSARY.md).
+
 1. **Read the theory section** (30-60 min)
    - Take notes
    - Sketch diagrams

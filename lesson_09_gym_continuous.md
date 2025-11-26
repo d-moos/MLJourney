@@ -16,38 +16,100 @@
 
 ## 📖 Theory
 
-### Gymnasium API
+If you encounter unfamiliar ML, deep learning, or RL terms in this lesson, see the [Glossary](GLOSSARY.md) for quick definitions and links to the relevant lessons.
+
+### Gymnasium API (Recap, with Focus on Continuous Control)
+
+Gymnasium provides a **standard interface** for RL environments. The two core methods
+you will use everywhere are `reset()` and `step()`:
 
 ```python
-env = gym.make('env_name')
+env = gym.make("env_name")
 state, info = env.reset()
 next_state, reward, terminated, truncated, info = env.step(action)
 ```
 
-**Key concepts:**
-- **terminated:** Episode ended naturally (goal/failure)
-- **truncated:** Episode ended due to time limit
-- **done = terminated or truncated**
+Meanings:
 
-### Continuous Action Spaces
+- `state` / `next_state`: a NumPy array representing the observation (position, velocity,
+  angles, pixels, ...).
+- `reward`: scalar reward from taking `action` in the current state.
+- `terminated`: the episode ended **because the task finished** (win/lose, fall over,
+  reach goal).
+- `truncated`: the episode ended **because of a time limit or external cut-off**, not
+  because the task is inherently done.
+- `done = terminated or truncated`: most algorithms treat either as an episode boundary
+  when bootstrapping values.
 
-**Discrete:** a ∈ {0, 1, 2, ...}
-**Continuous:** a ∈ ℝ^n (e.g., joint torques, steering angles)
+For continuous-control tasks like `Pendulum-v1` or MuJoCo robots, both observation and
+action spaces are usually `Box` spaces with ranges like `[-1, 1]` or physical limits.
 
-**Gaussian Policy:**
+### Continuous vs Discrete Actions
+
+So far we've mostly seen **discrete** actions:
+
+- `a ∈ {0, 1, 2, ...}` (e.g., left / right / jump)
+
+In continuous control we instead have
+
+- `a ∈ ℝ^n` (continuous torques, steering angles, throttle values, ...)
+
+Examples:
+
+- `Pendulum-v1`: a single torque in `[-2, 2]`
+- Rocket League: multiple continuous controls (steer, throttle, pitch, yaw, roll, boost)
+
+Because we cannot enumerate all possible actions, we usually make the policy output the
+**parameters of a continuous distribution** and then sample an action from that.
+
+### Gaussian Policies
+
+A very common choice in continuous control is a **multivariate Gaussian** (Normal)
+policy:
+
+```text
+π_θ(a | s) = 𝒩( μ_θ(s), σ_θ(s) )
 ```
-π_θ(a|s) = N(μ_θ(s), σ_θ(s))
-```
 
-Sample action: a ~ N(μ, σ)
+where:
 
-### Action Normalization
+- `μ_θ(s)` is a vector of means output by a neural network
+- `σ_θ(s)` is a vector of standard deviations (or log-stds) also produced by the network
 
-Many environments expect actions in [-1, 1]:
+To act:
+
+1. Compute `(μ, σ) = policy(s)`
+2. Sample `a ~ 𝒩(μ, σ)`
+3. Optionally clip or squash `a` to the valid action range
+
+In policy-gradient methods (like PPO), we also need the **log-probability** of the
+sampled action under this Gaussian. That log-prob is what appears in the
+`log π_θ(a | s) * advantage` term.
+
+### Action Normalization and Scaling
+
+Most continuous-control algorithms (PPO, SAC, DDPG, etc.) are implemented assuming the
+policy outputs actions in a convenient range, often `[-1, 1]` per dimension. The
+environment, however, may expect different bounds, e.g. `[-2, 2]` or `[0, 1]`.
+
+We typically do:
+
+1. Policy outputs `a_raw` in `[-1, 1]` (e.g., using `tanh` on the final layer).
+2. We map `a_raw` to the environment's actual action range `[low, high]`.
+
+The linear scaling from `[-1, 1]` to `[action_low, action_high]` is
 
 ```python
-action_scaled = action_low + (action + 1) * (action_high - action_low) / 2
+action_scaled = action_low + (a_raw + 1.0) * (action_high - action_low) / 2.0
 ```
+
+Why this matters:
+
+- Your policy code can be **environment-agnostic** (always output in `[-1, 1]`).
+- You avoid accidentally sending values outside of `env.action_space.low/high`, which
+  can otherwise cause errors or clipped behavior.
+- Proper scaling is critical when moving from toy tasks like `Pendulum-v1` to more
+  complex physics simulations or Rocket League controllers.
 
 ## 💻 Practical Implementation
 

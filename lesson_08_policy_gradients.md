@@ -16,89 +16,165 @@
 
 ## 📖 Theory
 
+If you encounter unfamiliar ML, deep learning, or RL terms in this lesson, see the [Glossary](GLOSSARY.md) for quick definitions and links to the relevant lessons.
+
 ### Policy Gradient Methods
 
-**Key idea:** Directly optimize the policy π_θ(a|s)
+In value-based methods (like Q-learning / DQN) we first learn a value function and then
+*derive* a policy from it (e.g., greedy w.r.t. Q). **Policy gradient methods flip this
+around:** we **parameterize the policy directly** and optimize it.
 
-**Objective:** Maximize expected return
-```
-J(θ) = E_π[G_t] = E[Σ_t γ^t r_t]
-```
+- We write the policy as \(\pi_\theta(a \mid s)\): a neural network with parameters
+  \(\theta\) that outputs a probability distribution over actions.
+- Our goal is to adjust \(\theta\) so that the policy chooses actions that yield high
+  long-term reward.
 
-**Policy Gradient Theorem:**
-```
-∇_θ J(θ) = E_π[∇_θ log π_θ(a|s) · Q^π(s,a)]
-```
+Formally we want to maximize the **expected return**
 
-**Intuition:** Increase probability of actions with high Q-values
-
-### REINFORCE Algorithm
-
-Monte Carlo policy gradient:
-
-```
-1. Generate episode using π_θ
-2. For each step t:
-   G_t = Σ_{k=t}^T γ^{k-t} r_k
-   θ ← θ + α ∇_θ log π_θ(a_t|s_t) · G_t
+```text
+J(θ) = 𝔼_π [G_t] = 𝔼_π [ Σ_t γ^t r_t ]
 ```
 
-**Advantages:**
-- Unbiased gradient estimates
-- Works with continuous actions
+The **policy gradient theorem** tells us that a valid gradient of this objective is
 
-**Disadvantages:**
-- High variance → slow learning
-- Need full episodes
-
-### Actor-Critic Methods
-
-Combine policy and value learning:
-
-**Actor:** Policy network π_θ(a|s)
-**Critic:** Value network V_φ(s)
-
-Update rule:
+```text
+∇_θ J(θ) = 𝔼_π [ ∇_θ log π_θ(a | s) · Q^π(s, a) ]
 ```
-# Critic update
-δ = r + γV_φ(s') - V_φ(s)  // TD error
-φ ← φ - α_v ∇_φ (δ)²
+
+Intuition:
+
+- `log π_θ(a | s)` tells us *how much more* or *less* likely the policy makes action `a`.
+- If an action leads to **higher-than-average return** in that state, we want to
+  **increase** its probability.
+- If it leads to poor returns, we want to **decrease** its probability.
+
+So the update
+
+```text
+θ ← θ + α · ∇_θ log π_θ(a | s) · ("how good" this action was)
+```
+
+is literally "nudge the policy towards actions that worked well".
+
+### REINFORCE Algorithm (Monte Carlo Policy Gradient)
+
+REINFORCE is the simplest policy gradient method. It uses **complete episodes** to
+estimate how good actions were.
+
+Algorithm sketch:
+
+```text
+1. Run the policy π_θ in the environment to generate an episode
+   (s₀, a₀, r₁, s₁, a₁, r₂, ..., s_T)
+2. For each time step t in the episode:
+       G_t = r_{t+1} + γ r_{t+2} + ... + γ^{T-t-1} r_T   # return from t
+       θ ← θ + α · ∇_θ log π_θ(a_t | s_t) · G_t
+```
+
+A useful mental model:
+
+- If the episode return from step `t` onward is **high**, we increase the probability
+  of the actions that were taken.
+- If the return is **low**, we decrease their probability.
+
+Pros:
+
+- Conceptually simple
+- Works with **discrete or continuous** actions
+
+Cons:
+
+- High variance: each update depends on a full episode return
+- Cannot update until the episode finishes
+
+This motivates adding a **baseline** to reduce variance.
+
+### Actor–Critic Methods
+
+REINFORCE uses the raw return `G_t` as the "how good" signal, which is noisy.
+Actor–critic methods introduce a separate **critic** to estimate value functions and
+produce lower-variance signals.
+
+- **Actor:** policy network \(\pi_\theta(a \mid s)\)
+- **Critic:** value network \(V_\phi(s)\) estimating expected return from state `s`
+
+We use TD learning for the critic and use its **TD error** as a better signal for the
+actor:
+
+```text
+# Critic update (TD(0))
+δ = r + γ V_φ(s') − V_φ(s)      # TD error
+φ ← φ − α_v ∇_φ (δ)²
 
 # Actor update
-θ ← θ + α_π ∇_θ log π_θ(a|s) · δ
+θ ← θ + α_π ∇_θ log π_θ(a | s) · δ
 ```
+
+If the outcome is **better than expected** (δ > 0) we increase the probability of `a`;
+if it is **worse than expected** (δ < 0) we decrease it.
 
 ### Advantage Function
 
-Better than using returns directly:
+Sometimes even using the critic's value estimates directly is not ideal. We often use
+the **advantage function**:
 
+```text
+A(s, a) = Q(s, a) − V(s)
 ```
-A(s,a) = Q(s,a) - V(s)
-```
 
-**Interpretation:** How much better is action a than average?
+Interpretation:
 
-**Advantages:**
-- Reduced variance
-- Centered around zero
+- `V(s)` is the average value of being in state `s`
+- `Q(s, a)` is the value when we specifically take action `a`
+- `A(s, a)` measures **how much better or worse** action `a` is relative to the
+  average action in that state.
+
+Advantages of using `A(s, a)` in the policy gradient:
+
+- Centered around zero 	→ updates are more balanced
+- Lower variance than using raw returns
+- If all actions are equally good, advantages are ~0 and the policy barely changes
+
+In practice we approximate `A(s, a)` using combinations of TD errors and returns (e.g.,
+Generalized Advantage Estimation, which you can explore as an extension).
 
 ### PPO (Proximal Policy Optimization)
 
-State-of-the-art policy gradient method.
+Vanilla actor–critic still suffers from a key problem: if we take **too large a gradient
+step**, the policy may change so much that performance collapses (we move into a bad
+region of parameter space).
 
-**Key idea:** Limit policy updates to prevent collapse
+PPO is a **trust-region-inspired** method that tries to keep each policy update
+"close" to the old policy, while still improving performance.
 
-**Clipped objective:**
+- Let `π_θ_old` be the policy before an update and `π_θ` the new policy.
+- Define the **probability ratio**
+
+  ```text
+  r_t(θ) = π_θ(a_t | s_t) / π_θ_old(a_t | s_t)
+  ```
+
+- If `r_t(θ) > 1`, the new policy makes `a_t` more likely; if `< 1`, less likely.
+
+The PPO **clipped objective** is
+
+```text
+L^CLIP(θ) = 𝔼_t [ min( r_t(θ) · A_t,
+                       clip(r_t(θ), 1 − ε, 1 + ε) · A_t ) ]
 ```
-L^CLIP(θ) = E[min(r_t(θ)·A_t, clip(r_t(θ), 1-ε, 1+ε)·A_t)]
 
-where r_t(θ) = π_θ(a|s) / π_θ_old(a|s)  // Probability ratio
-```
+Effect:
 
-**Benefits:**
-- More stable than vanilla policy gradients
-- Simpler than TRPO
-- Works well in practice
+- When the policy change is **small** (ratio near 1), the objective behaves like a
+  standard policy gradient.
+- When the change would make `r_t` go outside `[1−ε, 1+ε]`, we **clip** it so that the
+  improvement is limited. This prevents enormous destructive updates.
+
+Empirically, PPO is:
+
+- Much more **stable** than vanilla policy gradient
+- Easier to implement than TRPO (no second‑order optimization)
+- A very strong default for many continuous control and game tasks
 
 ## 💻 Practical Implementation
 

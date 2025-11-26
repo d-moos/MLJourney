@@ -17,6 +17,8 @@ By the end of this lesson, you will:
 
 ## 📖 Theory
 
+If you encounter unfamiliar ML, deep learning, or RL terms in this lesson, see the [Glossary](GLOSSARY.md) for quick definitions and links to the relevant lessons.
+
 ### What is PyTorch?
 
 PyTorch is a deep learning framework that provides:

@@ -71,6 +71,7 @@ RL Theory → Q-Learning → DQN → Policy Gradients → PPO
 3. **Do ALL exercises** - They're designed to test understanding
 4. **Experiment** - Modify code, break things, see what happens
 5. **Join communities** - Share progress on Discord/Reddit RL communities
+6. **Use the glossary** - If you see unfamiliar ML/RL terminology, consult the [Glossary](GLOSSARY.md) for definitions and links to the relevant lessons.
 
 ## 🛠️ Setup Instructions
 

@@ -18,80 +18,151 @@ By the end of this lesson, you will:
 
 ## 📖 Theory
 
+If you encounter unfamiliar ML, deep learning, or RL terms in this lesson, see the [Glossary](GLOSSARY.md) for quick definitions and links to the relevant lessons.
+
 ### Q-Learning Algorithm
 
-Q-learning learns the optimal Q-function directly without needing a model of the environment.
+Think back to Lesson 5: we defined the **optimal action-value function** \(Q^*(s,a)\) as
 
-**Update rule:**
+> "the expected return if we start in state s, take action a, and then act optimally afterwards."
+
+In tabular Q-learning we **directly learn a table of Q-values** that approximates \(Q^*\) without ever learning the transition probabilities \(P(s'\mid s,a)\).
+
+You can imagine a small GridWorld: each cell is a state, and actions are up/down/left/right. At the beginning all Q-values are 0. As the agent moves and receives rewards, it keeps **nudging** its table entries so that they better predict long‑term return.
+
+#### The Update Rule (One-Step TD Target)
+
+For a single transition \((s,a,r,s')\) the Q-learning update is
+
 ```
-Q(s,a) ← Q(s,a) + α[r + γ max_{a'} Q(s',a') - Q(s,a)]
-                        \_____________________/
-                                TD error
+Q(s,a) ← Q(s,a) + α [ r + γ max_{a'} Q(s',a') − Q(s,a) ]
+                        \___________________________/
+                                 TD error
 ```
 
-**Components:**
-- α: learning rate (step size)
-- γ: discount factor
-- TD target: r + γ max_{a'} Q(s',a')
-- TD error: how wrong our current Q-value is
+- **Current estimate**: `Q(s,a)`
+- **Target**: `r + γ max_{a'} Q(s',a')`  (reward now + discounted best value next)
+- **TD error**: `target - Q(s,a)` — how surprised we are
+- **α (learning rate)**: how big a step we take toward the target
 
-**Key properties:**
-- **Off-policy:** Learns optimal Q* while following ε-greedy policy
-- **Model-free:** Doesn't need to know transition probabilities
-- **Guaranteed convergence:** Under certain conditions (tabular case, proper α decay)
+So each time we see a transition, we move `Q(s,a)` a bit toward
+"reward + value of the best next action".
+
+#### Tiny Numerical Example
+
+Suppose in a GridWorld:
+
+- Current estimate: `Q(s, RIGHT) = 0.5`
+- After moving RIGHT, we get reward `r = +1` and land in `s'`
+- In `s'` the best next action currently has value `max_{a'} Q(s', a') = 0.8`
+- Discount factor: `γ = 0.9`, learning rate `α = 0.1`
+
+Then
+
+```text
+target = r + γ * max_a' Q(s', a')
+       = 1 + 0.9 * 0.8
+       = 1.72
+
+td_error = target - Q(s,RIGHT)
+         = 1.72 - 0.5 = 1.22
+
+Q_new(s,RIGHT) = 0.5 + 0.1 * 1.22 = 0.622
+```
+
+We **did not** need to know the transition probabilities; we just used the experience we observed.
+
+#### Key Properties
+
+- **Model-free:** No need to know \(P(s'\mid s,a)\) or \(R(s,a)\) analytically
+- **Off-policy:** Even if the agent behaves with an ε‑greedy policy, the target uses
+  `max_{a'} Q(s', a')` — it learns about the *optimal* policy
+- **Convergence (tabular case):** If every state–action pair is visited infinitely often and the
+  learning rate decays appropriately, Q-learning converges to \(Q^*\)
 
 ### Temporal Difference (TD) Learning
 
-TD learning updates value estimates based on other estimates (bootstrapping):
+Temporal Difference learning is the more general idea underlying Q-learning.
+Instead of waiting until the end of an episode to see the full return, we **bootstrap**:
 
-**Monte Carlo:** Wait until end of episode
-```
-V(s) ← V(s) + α[G_t - V(s)]  // G_t = actual return
-```
+- **Monte Carlo:**
+  - Wait until the episode finishes
+  - Compute the *actual* return \(G_t\) and update using that
 
-**TD(0):** Update immediately after one step
-```
-V(s) ← V(s) + α[r + γV(s') - V(s)]  // Bootstrap from V(s')
-```
+  ```
+  V(s) ← V(s) + α [ G_t − V(s) ]
+  ```
 
-**Advantages of TD:**
-- Learn from incomplete episodes
-- Lower variance (but higher bias)
-- Works in continuing (non-episodic) tasks
+- **TD(0):**
+  - Update immediately after each step using the **one‑step lookahead** target
+
+  ```
+  V(s) ← V(s) + α [ r + γ V(s') − V(s) ]
+  ```
+
+Advantages of TD methods:
+
+- Can **learn online** while the episode is still unfolding
+- Work in **continuing tasks** (no clear episode end)
+- Typically **lower variance** than Monte Carlo (but can be slightly biased)
+
+Q-learning is simply **TD(0 applied to action-values** instead of state-values).
 
 ### ε-Greedy Exploration
 
-Balance exploration and exploitation:
+If we always pick `argmax_a Q(s,a)` from the table, we might get stuck in a suboptimal
+region because we never try other actions. ε‑greedy is the simplest way to ensure
+exploration:
 
 ```python
-if random() < ε:
-    action = random_action()  # Explore
+if random() < epsilon:
+    action = random_action()      # Explore
 else:
-    action = argmax_a Q(s,a)  # Exploit
+    action = argmax_a Q[s, a]     # Exploit best known action
 ```
 
-**ε decay:** Start with high ε, decrease over time
+Typical schedule:
+
 ```python
-ε = ε_min + (ε_max - ε_min) * exp(-decay_rate * episode)
+epsilon_start = 1.0    # very exploratory
+epsilon_end = 0.05     # mostly greedy
+epsilon_decay = 500    # decay rate in episodes
+
+epsilon = epsilon_end + (epsilon_start - epsilon_end) * math.exp(-episode / epsilon_decay)
 ```
+
+Early in training the agent tries many random moves; later it mostly exploits what it
+has learned, with a small chance of trying something new.
 
 ### SARSA vs Q-Learning
 
-**SARSA (on-policy):**
-```
-Q(s,a) ← Q(s,a) + α[r + γQ(s',a') - Q(s,a)]
-                              ^
-                    actual action taken
+Both SARSA and Q-learning learn action-values, but they differ in **what future behavior
+they assume** when computing the target.
+
+**SARSA (on-policy):** learns about the policy it is actually following.
+
+```text
+Q(s,a) ← Q(s,a) + α [ r + γ Q(s', a') − Q(s,a) ]
+                             ↑
+                     action a' actually taken next
 ```
 
-**Q-Learning (off-policy):**
-```
-Q(s,a) ← Q(s,a) + α[r + γ max_{a'} Q(s',a') - Q(s,a)]
-                              ^^^
-                    best possible action
+**Q-learning (off-policy):** learns about the optimal greedy policy, regardless of how the
+agent currently behaves.
+
+```text
+Q(s,a) ← Q(s,a) + α [ r + γ max_{a'} Q(s', a') − Q(s,a) ]
+                             ↑↑↑
+                       best possible next action
 ```
 
-**Difference:** SARSA learns about policy it's following, Q-learning learns about optimal policy.
+**Intuition:**
+
+- SARSA answers: *"If I keep behaving with this ε‑greedy policy, what return do I get?"*
+- Q-learning answers: *"If I behave optimally from the next step onward, what return do I get?"*
+
+In practice, SARSA can be **safer** in some environments (e.g., cliff walking), while
+Q-learning can be more aggressively optimal once learning has converged.
 
 ## 💻 Practical Implementation
 

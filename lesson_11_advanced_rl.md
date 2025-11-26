@@ -16,70 +16,174 @@
 
 ## 📖 Theory
 
-### Reward Shaping
+If you encounter unfamiliar ML, deep learning, or RL terms in this lesson, see the [Glossary](GLOSSARY.md) for quick definitions and links to the relevant lessons.
 
-**Potential-based shaping:**
-```
-F(s, s') = γΦ(s') - Φ(s)
+So far you have learned **core RL algorithms** (Q-learning, DQN, PPO) and how to apply
+them to Gym-style problems. For complex games like Rocket League or large-scale
+environments, we often need *extra tools* to make learning practical. This lesson covers
+four such tools:
+
+- **Reward shaping** – making rewards denser without changing what “optimal” means
+- **Curriculum learning** – starting easy and gradually increasing difficulty
+- **Parallel environments** – collecting experience much faster
+- **Self-play & intrinsic motivation** – creating your own opponents and rewards
+
+These are not new algorithms; they are **scaffolding** around your algorithm that can
+make the difference between “never learns” and “works well in practice”.
+
+### Reward Shaping (Advanced View)
+
+In Lesson 10 you saw how adding extra reward terms can guide behavior, but can also be
+dangerous: the agent may optimize the shaping term and ignore the real goal.
+
+**Potential-based reward shaping** is a principled way to add shaping while
+*provably preserving* the optimal policy.
+
+We define a potential function \(\Phi(s)\) on states (think: “how close am I to the
+goal?”). Then we modify the reward as
+
+```text
+F(s, s') = γ Φ(s') - Φ(s)
 r' = r + F(s, s')
 ```
 
-Preserves optimal policy if Φ is a potential function.
+Key property (Ng et al., 1999): if \(\Phi\) is any real-valued function on states, then
+adding this shaping term **does not change which policies are optimal**. It only alters
+the *learning dynamics* by providing denser feedback.
+
+Intuition:
+
+- If you move to a state with higher potential (e.g., closer to scoring), you get a
+  positive shaping reward.
+- If you move away, you get a negative shaping reward.
+- Because the shaping term is a discounted difference of a potential, it forms a
+  “telescoping sum” along trajectories and cancels out when comparing full returns.
+
+For Rocket League, \(\Phi(s)\) could be something like **minus the distance from the
+ball to the opponent’s goal**, possibly with extra terms for ball height or control.
 
 ### Curriculum Learning
 
-Train on progressively harder tasks:
-1. Start with easy scenarios
-2. Gradually increase difficulty
-3. Build on learned behaviors
+Training a strong agent **from scratch on the full game** is often extremely hard:
+the state space is huge, rewards are sparse, and exploration is difficult.
 
-**Example:** Rocket League
-1. Hit stationary ball
-2. Hit slow-moving ball
-3. Aerial hits
-4. Full game
+Curriculum learning addresses this by training on a sequence of tasks of increasing
+difficulty:
+
+1. Design a set of tasks \(T_1, T_2, ..., T_n\) from easy to hard.
+2. Train the agent on \(T_1\) until it reaches a performance threshold.
+3. Move to \(T_2\), possibly mixing in some \(T_1\) to prevent forgetting.
+4. Continue until the agent can handle the full task.
+
+**Rocket League example curriculum:**
+
+1. **Hit a stationary ball** into an empty goal from short range.
+2. **Hit a slow-moving ball** rolling towards/away from you.
+3. **Practice aerial touches** in simplified setups.
+4. **Play full 1v1 games** with opponents.
+
+Good curricula:
+
+- Decompose skills (driving straight, turning, hitting, recovering, aerials).
+- Start with tasks where *random behavior sometimes gets reward*, so learning can begin.
+- Progress when success is consistently high (e.g., 80%+), not on a fixed episode count.
 
 ### Parallel Environments
 
-Run multiple environments simultaneously:
+Single-env training is often **too slow** for large problems: you spend most of your
+time waiting for the environment to step. Running **many environments in parallel**
+solves this by collecting experiences simultaneously.
+
+Conceptually:
+
 ```python
 envs = [make_env() for _ in range(num_envs)]
 states = [env.reset() for env in envs]
-# Collect experiences in parallel
+# Each training iteration:
+#   - choose actions for all envs
+#   - step all envs
+#   - accumulate a big batch of transitions
 ```
 
-**Benefits:**
-- Faster data collection
-- More diverse experiences
-- Better exploration
+Benefits:
+
+- Much **faster data collection** for CPU-bound environments
+- More **diverse experiences** in each batch (different random seeds, states)
+- Smoother learning curves (each update averages over many trajectories)
+
+This is exactly what libraries like Stable-Baselines3’s `SubprocVecEnv` do under the
+hood: spawn multiple processes, each running its own environment instance.
 
 ### Self-Play
 
-Agent plays against copies of itself:
-- Automatically curriculum
-- No need for scripted opponents
-- Discovers novel strategies
+In competitive games, fixed scripted opponents quickly become too easy or exploitable.
+**Self-play** lets the agent continuously generate challenging opponents:
 
-**Challenges:**
-- Non-stationary environment
-- Forgetting previous strategies
-- League-based training (AlphaStar)
+- At each training stage the agent plays against **copies of itself** or a **pool of
+  past versions**.
+- As the agent improves, the opponents it faces also become stronger.
+- This naturally creates a **curriculum of increasingly difficult opponents**.
 
-### Intrinsic Motivation
+However, self-play introduces challenges:
 
-Reward agent for exploration:
+- The opponent is always changing, making the environment **non-stationary**.
+- The agent can **forget** how to beat older strategies if training always focuses on
+  the latest opponent.
+- Large systems (like AlphaStar) use **league training**: a pool of different agent
+  roles and skill levels to maintain diversity.
 
-**Curiosity:**
+Practical tips:
+
+- Save snapshots of your agent periodically and sample opponents from this pool.
+- Evaluate against a **fixed benchmark** (e.g., built-in bots) to measure real progress.
+
+### Intrinsic Motivation (Curiosity and Exploration Bonuses)
+
+In many games external rewards are rare (sparse). Intrinsic motivation gives the agent
+an **internal reward signal** for “interesting” states, encouraging exploration.
+
+Two common forms:
+
+**1. Curiosity-based rewards**
+
+Train a model that tries to **predict what will happen** given the current state and
+action. If the prediction is bad, that means the outcome was surprising, so we reward it:
+
+```text
+r_intrinsic = || f(s') - f̂(s') ||²
 ```
-r_intrinsic = ||f(s') - f̂(s')||²
-```
-Reward unpredictability
 
-**Count-based:**
+Here `f̂(s')` is the forward model’s prediction and `f(s')` is some learned feature
+representation of the true next state. High error → high intrinsic reward.
+
+Effect:
+
+- The agent seeks out transitions where its world model is wrong.
+- Over time, as the model improves, the bonus for familiar states shrinks.
+
+**2. Count-based / novelty bonuses**
+
+If you can track how often you visit states (or state clusters), you can reward rare
+states more:
+
+```text
+r_intrinsic(s) = 1 / √(count(s))
 ```
-r_intrinsic = 1 / √count(s)
+
+- Early visits to a state give a large bonus.
+- As `count(s)` grows, the bonus fades, pushing the agent to explore new regions.
+
+In practice you rarely use intrinsic reward **alone**; you mix it with the task reward:
+
+```text
+r_total = r_extrinsic + β · r_intrinsic
 ```
-Reward visiting rare states
+
+with a small coefficient `β` (e.g., 0.01). Tuning `β` is important: too high and the
+agent just wanders around; too low and it ignores curiosity.
+
+Intrinsic motivation is especially useful in environments like large open worlds,
+exploration-heavy games, or Rocket League training maps where goals are far apart.
 
 ## 💻 Practical Implementation
 

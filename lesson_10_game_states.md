@@ -16,55 +16,146 @@
 
 ## 📖 Theory
 
+If you encounter unfamiliar ML, deep learning, or RL terms in this lesson, see the [Glossary](GLOSSARY.md) for quick definitions and links to the relevant lessons.
+
+This lesson is about two tightly connected design problems in RL for games:
+
+1. **What information do we give the agent?** (state / observation)
+2. **What behavior do we reward?** (reward function)
+
+Good choices here often matter **more** than small changes to the RL algorithm.
+
 ### State Representation Principles
 
-**Good state representation:**
-- **Markov:** Contains all relevant information
-- **Compact:** No redundant information
-- **Normalized:** Similar scales across features
-- **Informative:** Captures task-relevant aspects
+We want the observation `s_t` to be a *useful summary* of the game at time `t`.
+
+A good state representation is:
+
+- **Markov:** it contains enough information that, given `s_t`, the **future** does not
+  depend on the **past**. For Rocket League, a single cropped screenshot is *not*
+  Markov: you cannot tell the ball's velocity from one image. Adding velocities or
+  stacking frames makes it closer to Markov.
+- **Compact:** no unnecessary details. Exact grass texture or stadium audience pixels
+  rarely matter for control.
+- **Normalized:** features are on similar scales (e.g., positions divided by field size,
+  velocities divided by max speed). This helps neural nets train reliably.
+- **Informative:** focuses on task-relevant aspects: relative positions, who owns the
+  ball, where the goals are, how much boost you have, etc.
+
+Bad states make learning nearly impossible (missing critical info) or very slow (huge
+irrelevant inputs).
 
 ### Feature Types
 
-**1. Raw pixels** (vision)
-- Use CNNs
-- Frame stacking for temporal info
-- Grayscale conversion
+There are three broad approaches; in practice you often **combine** them.
 
-**2. Structured state** (positions, velocities)
-- Ball position, velocity
-- Car rotation, speed
-- Boost amount, etc.
+**1. Raw pixels (vision)**
+
+- Input is one or more images rendered from the game.
+- Processed with a **CNN** (like in DQN for Atari).
+- Usually converted to **grayscale** and resized (e.g., 84×84) to reduce input size.
+- Often use **frame stacking** (see below) to give a sense of motion.
+
+Pros:
+
+- Very general; requires minimal game-specific knowledge.
+- Matches how humans see the game.
+
+Cons:
+
+- High-dimensional; slow to train.
+- Harder to debug than structured features.
+
+**2. Structured state (hand-crafted features)**
+
+These are vectors of numbers that describe the game objects directly, e.g. for
+Rocket League:
+
+- Ball position and velocity
+- Car position, velocity, and rotation
+- Whether you are on the ground or in the air
+- Boost amount, jump / flip status
+
+These features are typically **much lower dimensional** than raw pixels and easier to
+normalize. They also make it easier to reason about what the network sees.
 
 **3. Derived features**
-- Distance to goal
-- Angle to ball
-- Relative positions
 
-### Frame Stacking
+On top of raw or structured features we can compute higher-level quantities, such as:
 
-Stack last N frames to capture motion:
-```
-state = [frame_t, frame_{t-1}, frame_{t-2}, frame_{t-3}]
-```
+- Distance from car to ball / goal
+- Angle between car's forward direction and the ball
+- Whether the ball is moving towards or away from the opponent's goal
+
+Derived features often encode **what we care about** more directly than raw positions.
+However, too much hand-designed structure can bias the agent or hide useful signals, so
+there is a trade-off.
+
+### Frame Stacking and Temporal Information
+
+Games are dynamic. From a **single** frame, you cannot tell whether the ball is moving
+towards or away from you. Two common solutions:
+
+1. **Include velocities** explicitly as features (in structured representations).
+2. **Stack recent frames** when using pixels:
+
+   ```
+   state_t = [frame_t, frame_{t-1}, frame_{t-2}, frame_{t-3}]
+   ```
+
+Frame stacking lets the CNN infer motion (like optical flow) from differences between
+frames. This is exactly what the original DQN paper did for Atari.
+
+For very long-term dependencies (e.g., multi-step strategies), you might explore RNNs or
+transformers later, but frame stacking is a strong baseline.
 
 ### Reward Shaping
 
-Design rewards to guide learning:
+The **reward function** defines what you want the agent to care about. In principle, we
+could give reward only when the game is won or lost:
 
-**Sparse rewards:**
-```
-r = 1 if goal scored else 0
+```text
+r = 1  if goal_scored else 0
 ```
 
-**Dense rewards:**
-```
-r = 0.1 * velocity_toward_goal
+This is a **sparse reward**. It is perfectly aligned with the game objective, but very
+hard to learn from: the agent may play thousands of steps before ever scoring a goal.
+
+To speed things up we often add **dense shaping rewards** that give feedback at every
+step, for example:
+
+```text
+r = 0.1 * velocity_toward_opponent_goal
     + 0.5 * touch_ball
     + 1.0 * goal_scored
 ```
 
-**Caution:** Can create unintended behaviors!
+This encourages the agent to move the ball in the right direction, touch it often, and
+still strongly rewards actual goals.
+
+However, reward shaping is **dangerous** if done carelessly:
+
+- The agent might learn to farm the shaping terms instead of winning the game.
+- Example: reward only for "ball velocity towards goal" can produce agents that smash
+  the ball randomly, even into bad positions, as long as short-term velocity looks good.
+
+A more principled approach is **potential-based shaping** (Ng et al., 1999), where you
+define a potential function \(\Phi(s)\) (e.g., negative distance to the opponent goal)
+and add a shaping term
+
+```text
+F(s, s') = γ Φ(s') - Φ(s)
+```
+
+This preserves the optimal policy of the original MDP while still providing denser
+feedback.
+
+In practice for Rocket League-like games you will:
+
+- Start with a simple base reward (goals for/against).
+- Add a **small number** of carefully chosen shaping terms (e.g., ball towards goal,
+  touches, staying in play).
+- Watch replays to ensure the agent is not exploiting the reward in unintended ways.
 
 ## 💻 Practical Implementation
 

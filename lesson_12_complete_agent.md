@@ -16,68 +16,137 @@
 
 ## 📖 Theory
 
+If you encounter unfamiliar ML, deep learning, or RL terms in this lesson, see the [Glossary](GLOSSARY.md) for quick definitions and links to the relevant lessons.
+
+This lesson is about turning everything you have learned so far into a **complete,
+repeatable training pipeline**. Up to now you have trained individual algorithms on
+single environments; a real project (like Rocket League) needs more structure.
+
 ### Complete RL Pipeline
 
-```
-1. Environment Setup
-   - State/action space design
-   - Reward function
-   - Termination conditions
+You can think of an RL project as moving through six interconnected stages:
 
-2. State Preprocessing
-   - Normalization
-   - Frame stacking
-   - Feature extraction
+1. **Environment Setup**
+   - Define **state and action spaces** (Lesson 10): what information the agent sees,
+     and what controls it has.
+   - Design the **reward function** (Lessons 10 & 11): what behavior you want to
+     encourage, and how you will measure success.
+   - Specify **termination conditions**: when an episode ends (goal scored, time limit,
+     car destroyed, etc.).
 
-3. Agent Architecture
-   - Network design
-   - Hyperparameters
-   - Algorithm choice
+2. **State Preprocessing**
+   - **Normalization:** scale inputs to reasonable ranges (e.g., divide positions by
+     field size, velocities by max speed). This stabilizes learning.
+   - **Frame stacking:** for pixel or fast-moving tasks, stack recent observations so
+     the agent can infer velocity.
+   - **Feature extraction:** choose or learn compact state representations
+     (e.g., CNNs for pixels, hand-crafted Rocket League features).
 
-4. Training Loop
-   - Data collection
-   - Model updates
-   - Logging
+3. **Agent Architecture & Algorithm**
+   - Choose a **model**: MLP, CNN, RNN, or combination, based on state type.
+   - Pick an **algorithm**: DQN variants for discrete actions, PPO/SAC/TD3 for
+     continuous control.
+   - Set initial **hyperparameters** (see below): learning rates, batch sizes, etc.
 
-5. Evaluation
-   - Performance metrics
-   - Visualization
-   - Analysis
+4. **Training Loop**
+   - **Collect data:** interact with the environment using the current policy (possibly
+     with exploration noise or ε-greedy).
+   - **Store transitions:** maintain replay buffers or trajectory batches.
+   - **Update networks:** run gradient steps at regular intervals.
+   - **Log metrics:** track rewards, losses, Q-values, policy entropy, etc., with
+     TensorBoard/WandB.
 
-6. Deployment
-   - Model export
-   - Inference optimization
-   - Real-time execution
-```
+5. **Evaluation**
+   - Use **separate evaluation runs** with exploration disabled to measure true
+     performance.
+   - Track **metrics over time**: average return, success rate, episode length.
+   - **Visualize behavior:** record videos or trajectories; many RL failures are only
+     obvious when you watch the agent.
+
+6. **Deployment**
+   - Export trained models (e.g., PyTorch `state_dict`) and configuration.
+   - Optimize for **inference**: smaller networks, quantization, batching.
+   - Integrate into the **target system**: game client, simulation server, or robot.
+
+The practical code later in this lesson implements exactly this loop in a reusable
+`CompleteRLTrainer` class.
 
 ### Hyperparameter Tuning
 
-**Key hyperparameters:**
-- Learning rate: 1e-5 to 1e-3
-- Batch size: 32 to 256
-- Network architecture: depth and width
-- Exploration (epsilon, entropy bonus)
-- Discount factor gamma: 0.95 to 0.999
+Even with the right algorithm, **bad hyperparameters can completely kill learning**.
+Hyperparameter tuning is the process of systematically searching this space.
+
+Some of the most important hyperparameters:
+
+- **Learning rate:** often in the range `1e-5` to `1e-3` for deep RL.
+  - Too high → noisy, unstable updates, divergence.
+  - Too low → very slow learning or getting stuck in poor local optima.
+- **Batch size:** typically `32` to `256` for many algorithms.
+  - Small batches: more noise, faster updates, better exploration.
+  - Large batches: smoother gradients but higher memory and slower iterations.
+- **Network architecture:** depth and width control capacity.
+  - Too small → underfitting complex environments.
+  - Too large → slower training, risk of overfitting or instability.
+- **Exploration parameters:** ε in ε-greedy, entropy bonus in PPO.
+  - Too little exploration: agent exploits early, gets stuck.
+  - Too much: agent keeps trying random actions, never settles.
+- **Discount factor γ:** usually in `[0.95, 0.999]`.
+  - Lower γ: focuses on short-term rewards; easier credit assignment but may ignore
+    long-horizon strategies.
+  - Higher γ: values long-term reward but can increase variance and instability.
 
 **Tuning strategies:**
-- Grid search
-- Random search
-- Population-based training
-- Optuna (automated)
+
+- **Grid search:** try all combinations from a small set of values.
+  - Simple but becomes expensive in high dimensions.
+- **Random search:** sample hyperparameters from distributions.
+  - Often more efficient than grid search for the same budget.
+- **Population-based training (PBT):** maintain a population of agents, periodically
+  clone and mutate the best ones.
+- **Bayesian / automated tuning (e.g., Optuna):** model the relationship between
+  hyperparameters and performance to pick promising new trials.
+
+Regardless of strategy:
+
+- Log **everything** (config + results).
+- Change only a **few hyperparameters at a time** when debugging.
+- Start with **known-good defaults** from libraries like Stable-Baselines3 when
+  possible.
 
 ### Training Stability
 
-**Common issues:**
-- Exploding/vanishing gradients
-- Reward instability
-- Forgetting (catastrophic)
-- Non-stationarity
+Deep RL is notorious for being unstable. Here are common failure modes and how to
+interpret them:
 
-**Solutions:**
-- Gradient clipping
-- Reward normalization
-- Regular checkpoints
-- Target networks
+- **Exploding / vanishing gradients**
+  - Symptoms: loss becomes `NaN` or extremely large; network weights blow up.
+  - Mitigations:
+    - **Gradient clipping** (e.g., clip global norm to 0.5 or 1.0).
+    - Careful initialization and normalization of inputs.
+    - Use stable architectures and optimizers (e.g., PPO with Adam).
+
+- **Reward instability**
+  - Symptoms: average return jumps wildly between runs; training is hard to compare.
+  - Mitigations:
+    - **Reward normalization** or clipping (e.g., clip to [-10, 10]).
+    - Design rewards with similar magnitudes across events.
+
+- **Catastrophic forgetting**
+  - Symptoms: agent learns a new skill but forgets older ones (e.g., can score but no
+    longer defends).
+  - Mitigations:
+    - Mix in **old experiences** in the replay buffer (not just most recent).
+    - Use curricula and evaluation tasks that cover the full skill set.
+
+- **Non-stationarity** (environment or opponents changing over time)
+  - Symptoms: performance improves for a while, then suddenly collapses.
+  - Mitigations:
+    - Use **target networks** and slowly-updated value estimates.
+    - In self-play, maintain a **diverse pool of opponents** instead of just the
+      latest model.
+
+Regular **checkpoints** are essential: save models frequently so you can roll back if a
+run collapses, compare different hyperparameter settings, and analyze what went wrong.
 
 ## 💻 Practical Implementation
 
