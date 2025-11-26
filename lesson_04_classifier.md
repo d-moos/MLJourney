@@ -22,70 +22,105 @@ If you encounter unfamiliar ML, deep learning, or RL terms in this lesson, see t
 
 ### Convolutional Neural Networks (CNNs)
 
-CNNs are specialized for processing grid-like data (images).
+CNNs are specialized for processing **gridlike data** such as images.
+Instead of looking at all pixels at once with a fully connected layer,
+they use small filters that scan across the image and look for local
+patterns.
 
-The core idea of a **convolution** is:
+The core idea of a **convolution** is to take a small **filter (or
+kernel)**, for example a 33 grid of weights, and slide it over the
+image. At each position, you multiply the filter weights by the pixel
+values underneath, sum them up, and write the result into an output
+image. Because the **same filter is reused everywhere**, the network can
+detect the same pattern (like a vertical edge) no matter where it
+appears in the input. By stacking several convolutional layers, the
+network first learns simple edges, then combinations of edges, and
+eventually more complex shapes.
 
-- Take a small **filter / kernel** (e.g., a 3×3 grid of weights).
-- Slide it over the image.
-- At each position, compute a **weighted sum** of the pixels under the filter.
+The main building blocks of a CNN work together to turn raw pixels into
+useful features. **Convolutional layers** are responsible for learning
+spatial hierarchies: early layers tend to respond to lowlevel patterns
+like edges and textures, middle layers respond to shapes or simple
+parts, and deeper layers respond to highlevel object parts (for MNIST,
+things like loops and strokes that define digits).
 
-The same filter is reused across the whole image, so the network can detect the
-same pattern (edge, corner, texture) anywhere. Stacking multiple convolutional
-layers lets the network build up from simple edges to more complex shapes.
+Between convolutions, we often insert **pooling layers** that reduce the
+spatial resolution of the feature maps. For example, a 22 maxpooling
+layer replaces each 22 block with its maximum value. This makes the
+representation smaller and more robust to small shifts in the input: if
+an edge moves by one pixel, it still activates roughly the same pooled
+unit. Average pooling does something similar but takes the mean instead
+of the maximum, producing a smoother representation.
 
-**Key components:**
+After several rounds of convolution and pooling, we typically **flatten**
+the feature maps and feed them into one or more **fully connected
+layers**. These final layers treat the extracted features as a vector and
+perform the last steps of reasoning needed for **classification**: for
+MNIST, mapping from highlevel digit features to ten output scores (one
+for each digit 07).
 
-1. **Convolutional Layers:** Learn spatial hierarchies of features
-   - Low-level: edges, textures
-   - Mid-level: shapes, patterns
-   - High-level: object parts
-
-2. **Pooling Layers:** Downsample spatial dimensions to make representations
-   smaller and more robust to small shifts in the input.
-   - Max pooling: Take maximum value in each small window (keeps strongest signal).
-   - Average pooling: Take average in region (smooths things out).
-
-3. **Fully Connected Layers:** Final classification
-
-**Why CNNs matter for RL:**
-- Process visual observations (Atari games, Rocket League)
-- Extract features from game frames
-- Spatial reasoning (object positions, layouts)
+CNNs matter for RL because many environments provide **visual
+observations**. In Atari, the state is literally the game screen; in
+Rocket League you may use camera images or rendered views of the field.
+CNNs act as **feature extractors** that convert raw game frames into
+compact, informative state vectors. These vectors then feed into your RL
+algorithm, allowing the agent to reason about **spatial structure** such
+as object positions, layouts, and motion.
 
 ### Classification Metrics
 
-**Accuracy:** (Correct predictions) / (Total predictions)
-- Simple but can be misleading with imbalanced data
+When you train a classifier, you need ways to judge how good its
+predictions are. The most familiar metric is **accuracy**, defined as
+`(number of correct predictions) / (total predictions)`. Accuracy is easy
+to understand, but it can be misleading when the classes are imbalanced
+(for example, 99% of examples are class 0): a model that always predicts
+the majority class can have high accuracy but be useless.
 
-**Confusion Matrix:** Shows all combinations of predicted vs actual
+A **confusion matrix** gives a more detailed picture. It is a table that
+shows, for each true class, how many examples were predicted as each
+possible class. For digit classification you get a 1010 table: row 3,
+column 8 tells you how many 3 digits were incorrectly labeled as
+8. Looking at this matrix can reveal systematic mistakes (for
+example, confusing 3 and 5).
 
-**Precision:** Of predicted positives, how many are correct?
-**Recall:** Of actual positives, how many did we find?
-**F1 Score:** Harmonic mean of precision and recall
+Two closely related metrics are **precision** and **recall**. Precision
+answers: Of all the examples the model predicted as positive, how many
+were actually positive? Recall answers: Of all the truly positive
+examples, how many did the model find? In other words, precision cares
+about **false positives**, while recall cares about **false negatives**.
+The **F1 score** is the harmonic mean of precision and recall; it is
+high only if both are reasonably high, so it is a good single number to
+summarize performance when you care about both kinds of error.
 
 ### Batch Normalization
 
-During training, the distribution of layer activations can drift as earlier
-layers change, which can slow or destabilize learning. **Batch normalization**
-normalizes each layer’s activations within a mini-batch to have roughly zero
-mean and unit variance, then learns a scale and shift for each feature.
+During training, the distribution of activations in a layer can change as
+earlier layers update their weights. This phenomenon (sometimes called
+*internal covariate shift*) can slow down or destabilize learning.
+**Batch normalization** tackles this by normalizing each layers
+activations within a minibatch so that they have roughly zero mean and
+unit variance, and then learning a separate scale and shift for each
+feature so the layer can still represent any distribution it needs.
 
-This normalization of activations within mini-batches:
-- Faster training
-- Higher learning rates possible
-- Acts as regularization
+Normalizing activations in this way often leads to **faster training**
+and allows you to use **higher learning rates** without divergence. It
+also tends to **regularize** the model slightly, because the statistics
+are computed from small batches and add a bit of noise to the activations.
 
 ### Data Augmentation
 
-Instead of collecting more real images, we can synthetically **augment** the
-dataset by applying random transformations so the model sees slightly different
-versions of each example on every epoch.
+Instead of collecting more real images, we can synthetically
+**augment** the dataset by applying random transformations so the model
+sees slightly different versions of each example on every epoch. For
+image data this might mean random **rotations**, **translations** (small
+shifts), **scaling**, or flips.
 
-Create variations of training data:
-- Rotation, translation, scaling
-- Adds robustness
-- Prevents overfitting
+By creating many such variations of the training images, you encourage
+the model to focus on the underlying digit shape rather than the exact
+pixel arrangement. This makes the classifier more **robust** to natural
+variations (for example, a digit drawn slightly offcenter) and helps
+**prevent overfitting**, because the effective size and diversity of the
+training set is increased without collecting new labeled data.
 
 ## 💻 Practical Implementation
 

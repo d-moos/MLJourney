@@ -76,77 +76,101 @@ The practical code later in this lesson implements exactly this loop in a reusab
 Even with the right algorithm, **bad hyperparameters can completely kill learning**.
 Hyperparameter tuning is the process of systematically searching this space.
 
-Some of the most important hyperparameters:
+Some of the most important hyperparameters control **how quickly and smoothly** your
+agent learns.
 
-- **Learning rate:** often in the range `1e-5` to `1e-3` for deep RL.
-  - Too high → noisy, unstable updates, divergence.
-  - Too low → very slow learning or getting stuck in poor local optima.
-- **Batch size:** typically `32` to `256` for many algorithms.
-  - Small batches: more noise, faster updates, better exploration.
-  - Large batches: smoother gradients but higher memory and slower iterations.
-- **Network architecture:** depth and width control capacity.
-  - Too small → underfitting complex environments.
-  - Too large → slower training, risk of overfitting or instability.
-- **Exploration parameters:** ε in ε-greedy, entropy bonus in PPO.
-  - Too little exploration: agent exploits early, gets stuck.
-  - Too much: agent keeps trying random actions, never settles.
-- **Discount factor γ:** usually in `[0.95, 0.999]`.
-  - Lower γ: focuses on short-term rewards; easier credit assignment but may ignore
-    long-horizon strategies.
-  - Higher γ: values long-term reward but can increase variance and instability.
+The **learning rate** determines the size of each gradient step and is often in the
+range `1e-5` to `1e-3` for deep RL. If the learning rate is **too high**, updates
+become very noisy and the parameters can oscillate or even diverge, with losses
+shooting to infinity or becoming `NaN`. If it is **too low**, learning becomes very
+slow and the optimizer may get stuck in a poor local optimum because each step is too
+small to escape.
 
-**Tuning strategies:**
+The **batch size** (how many transitions you use per gradient step) is typically
+between `32` and `256` for many algorithms. **Small batches** give more noisy gradient
+estimates but allow more frequent updates for the same amount of data, which can help
+exploration and responsiveness. **Large batches** produce smoother, more stable
+gradients but require more memory and make each training iteration slower.
 
-- **Grid search:** try all combinations from a small set of values.
-  - Simple but becomes expensive in high dimensions.
-- **Random search:** sample hyperparameters from distributions.
-  - Often more efficient than grid search for the same budget.
-- **Population-based training (PBT):** maintain a population of agents, periodically
-  clone and mutate the best ones.
-- **Bayesian / automated tuning (e.g., Optuna):** model the relationship between
-  hyperparameters and performance to pick promising new trials.
+Your **network architecture** (depth and width) controls the model's capacity. If the
+network is **too small**, it may underfit complex environments and fail to represent
+useful value or policy functions. If it is **too large**, training becomes slower and
+the model may overfit or become harder to stabilize, especially in RL where the data
+distribution is non-stationary.
 
-Regardless of strategy:
+The **exploration parameters** (like ε in ε-greedy for DQN or the entropy bonus
+coefficient in PPO) govern the trade-off between trying new actions and exploiting what
+the agent already believes is best. With **too little exploration**, the agent may
+quickly exploit a suboptimal strategy it discovered early and then get stuck there.
+With **too much** exploration, the agent keeps taking random actions and may never
+settle on a good policy.
 
-- Log **everything** (config + results).
-- Change only a **few hyperparameters at a time** when debugging.
-- Start with **known-good defaults** from libraries like Stable-Baselines3 when
-  possible.
+Finally, the **discount factor** γ, usually in `[0.95, 0.999]`, controls how much the
+agent values long-term rewards relative to immediate ones. A **lower γ** places more
+weight on short-term rewards, which simplifies credit assignment but may cause the
+agent to ignore strategies that only pay off far in the future. A **higher γ** makes
+the agent care more about long-term outcomes, but it can also increase the variance of
+returns and make training less stable.
+
+There are several common **tuning strategies**. In a basic **grid search**, you choose
+a small set of candidate values for each hyperparameter and try all combinations. This
+is simple to implement but becomes very expensive as you add more parameters or more
+candidate values. A **random search** instead samples hyperparameters from chosen
+distributions; for the same number of trials this often explores the space more
+effectively than a grid.
+
+More advanced strategies include **population-based training (PBT)**, where you
+maintain a population of agents, periodically copy weights from the best-performing
+ones, and randomly mutate their hyperparameters. Over time this evolves both weights
+and hyperparameters. **Bayesian or automated tuning** libraries (such as Optuna) try to
+model the relationship between hyperparameters and performance so that each new trial
+is chosen in a promising region of the space rather than at random.
+
+Regardless of which strategy you use, some best practices always apply. You should log
+**everything** (both the configuration and resulting metrics) so that you can later
+analyze what worked and reproduce good runs. When debugging, try to change only a
+**small number of hyperparameters at a time**, so you can attribute any improvement or
+regression to a specific change. And whenever possible, **start from known-good
+defaults** taken from stable baselines or published implementations, then adapt them to
+your game instead of tuning from scratch.
 
 ### Training Stability
 
-Deep RL is notorious for being unstable. Here are common failure modes and how to
-interpret them:
+Deep RL is notorious for being unstable. It helps to recognize common failure modes
+and know how to respond to them.
 
-- **Exploding / vanishing gradients**
-  - Symptoms: loss becomes `NaN` or extremely large; network weights blow up.
-  - Mitigations:
-    - **Gradient clipping** (e.g., clip global norm to 0.5 or 1.0).
-    - Careful initialization and normalization of inputs.
-    - Use stable architectures and optimizers (e.g., PPO with Adam).
+One frequent issue is **exploding or vanishing gradients**. When gradients explode,
+you may see the loss become extremely large or `NaN`, and the network weights can blow
+up to huge values. Vanishing gradients, on the other hand, make learning grind to a
+halt because updates become effectively zero. To mitigate these problems you can apply
+**gradient clipping** (for example, clipping the global norm to 0.5 or 1.0), use
+careful initialization and input normalization so activations stay in reasonable
+ranges, and prefer empirically stable architectures and optimizers (such as PPO with
+Adam and appropriate learning rates).
 
-- **Reward instability**
-  - Symptoms: average return jumps wildly between runs; training is hard to compare.
-  - Mitigations:
-    - **Reward normalization** or clipping (e.g., clip to [-10, 10]).
-    - Design rewards with similar magnitudes across events.
+Another problem is **reward instability**, where the average episode return jumps
+wildly between runs or even within the same run, making it hard to compare different
+experiments. A common fix is to apply **reward normalization or clipping** (for
+example, clipping individual rewards to a range like `[-10, 10]`) and to design reward
+terms so that they have roughly similar magnitudes across different types of events.
 
-- **Catastrophic forgetting**
-  - Symptoms: agent learns a new skill but forgets older ones (e.g., can score but no
-    longer defends).
-  - Mitigations:
-    - Mix in **old experiences** in the replay buffer (not just most recent).
-    - Use curricula and evaluation tasks that cover the full skill set.
+You may also encounter **catastrophic forgetting**, where the agent learns a new skill
+but seems to forget older ones (for example, it learns to score but no longer
+defends). This is especially common when the data distribution shifts over time. To
+reduce forgetting, you can mix in **older experiences** in the replay buffer instead of
+training only on the most recent transitions, and you can design curricula and
+evaluation tasks that regularly exercise the full set of desired skills.
 
-- **Non-stationarity** (environment or opponents changing over time)
-  - Symptoms: performance improves for a while, then suddenly collapses.
-  - Mitigations:
-    - Use **target networks** and slowly-updated value estimates.
-    - In self-play, maintain a **diverse pool of opponents** instead of just the
-      latest model.
+Finally, **non-stationarity** can arise when the environment or opponents change over
+time, as often happens in self-play. Performance may improve for a while and then
+suddenly collapse when the opponent changes. Techniques like **target networks** and
+slowly-updated value estimates can make learning more robust. In self-play settings it
+also helps to maintain a **diverse pool of opponents** rather than always training
+against the very latest model.
 
-Regular **checkpoints** are essential: save models frequently so you can roll back if a
-run collapses, compare different hyperparameter settings, and analyze what went wrong.
+Throughout training, regular **checkpoints** are essential: save models frequently so
+you can roll back if a run collapses, compare different hyperparameter settings, and
+analyze what went wrong without having to retrain from scratch.
 
 ## 💻 Practical Implementation
 

@@ -71,10 +71,11 @@ policy:
 π_θ(a | s) = 𝒩( μ_θ(s), σ_θ(s) )
 ```
 
-where:
-
-- `μ_θ(s)` is a vector of means output by a neural network
-- `σ_θ(s)` is a vector of standard deviations (or log-stds) also produced by the network
+where `μ_θ(s)` is a vector of **means** output by a neural network and
+`σ_θ(s)` is a vector of **standard deviations** (or log‑standard
+deviations) also produced by the network. Intuitively, the mean tells you
+the most likely action in each dimension, while the standard deviation
+controls how much random exploration you add around that mean.
 
 To act:
 
@@ -105,11 +106,16 @@ action_scaled = action_low + (a_raw + 1.0) * (action_high - action_low) / 2.0
 
 Why this matters:
 
-- Your policy code can be **environment-agnostic** (always output in `[-1, 1]`).
-- You avoid accidentally sending values outside of `env.action_space.low/high`, which
-  can otherwise cause errors or clipped behavior.
-- Proper scaling is critical when moving from toy tasks like `Pendulum-v1` to more
-  complex physics simulations or Rocket League controllers.
+By always having the policy output actions in a fixed range like
+`[-1, 1]`, your **policy code becomes environment‑agnostic**: the same
+network architecture can be reused across many tasks, and only the
+scaling layer changes. Correct scaling also ensures that you do not
+accidentally send values outside of `env.action_space.low/high`, which
+could otherwise cause runtime errors or implicit clipping by the
+environment. Getting this right becomes especially important when you
+move from simple tasks like `Pendulum‑v1` to more complex physics
+simulations or Rocket League‑style controllers, where each control
+dimension may have different physical limits.
 
 ## 💻 Practical Implementation
 

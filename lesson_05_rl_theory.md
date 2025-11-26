@@ -32,61 +32,112 @@ If you encounter unfamiliar ML, deep learning, or RL terms in this lesson, see t
     └─────────┘   state, reward       └─────────────┘
 ```
 
-**Compared to supervised learning:**
-- **No direct labels:** Only rewards (which can be delayed)
-- **Sequential decisions:** Actions affect future states
-- **Exploration needed:** Must try actions to learn their value
-- **Credit assignment:** Which actions led to reward?
+**Compared to supervised learning.** In supervised learning every training
+example comes with a **label** that tells you the correct answer, and each
+example is usually independent of the others. In reinforcement learning we
+do **not** get such direct labels. The agent only receives **rewards**, and
+those rewards can be **delayed** by many time steps. Decisions are also
+**sequential**: each action changes the future states the agent will see.
+This creates an **exploration problem** (the agent must try actions to
+discover their long‑term consequences) and a **credit assignment problem**
+(when a reward finally arrives, we must figure out which past actions
+deserve the credit or blame).
 
 ### Markov Decision Processes (MDPs)
 
-An MDP is defined by the tuple **(S, A, P, R, γ)**:
+Formally, we describe an RL problem as a **Markov Decision Process
+(MDP)**, which is defined by the tuple (S, A, P, R, γ).
 
-**S:** State space
-- All possible situations the agent can be in
-- Example (CartPole): [position, velocity, angle, angular_velocity]
+The set **S** is the **state space**. It contains all the different
+situations the agent can find itself in. For the CartPole environment,
+for example, one way to represent the state is as a vector of four
+numbers: `[position, velocity, angle, angular_velocity]`. Each unique
+combination of these numbers is a different state.
 
-**A:** Action space
-- All possible actions the agent can take
-- Can be discrete (left/right) or continuous (steering angle)
+The set **A** is the **action space**. It lists everything the agent is
+allowed to do. In some environments A is **discrete**, such as choosing
+between "move left" or "move right". In others it is **continuous**, such
+as selecting a steering angle between -30° and +30° or choosing a real
+valued acceleration.
 
-**P:** Transition function P(s'|s,a)
-- Probability of reaching state s' from state s after taking action a
-- **Markov property:** P(s'|s,a) = P(s'|s,a,s_{t-1},s_{t-2},...)
-- Future depends only on current state, not history
+The function **P** is the **transition function** P(s' | s, a). It tells
+us, for each state s and action a, the probability of landing in a next
+state s'. The key assumption is the **Markov property**: P(s' | s, a) does
+not depend on the full past history (s_{t-1}, s_{t-2}, ...), only on the
+current state and action. Intuitively, the current state is a
+"sufficient summary" of the past for predicting the future.
 
-**R:** Reward function R(s,a,s')
-- Immediate scalar feedback for taking action a in state s
-- Guides the agent toward desired behavior
+The function **R** is the **reward function** R(s, a, s'). It outputs a
+single number that is the **immediate feedback** for taking action a in
+state s and ending up in state s'. This is how we encode the task: high
+rewards for desirable outcomes, low or negative rewards for undesirable
+ones. The agent's goal is to discover behaviour that produces large
+long‑term rewards according to R.
 
-**γ:** Discount factor, 0 ≤ γ ≤ 1
-- How much to value future rewards vs immediate rewards
-- γ=0: only care about immediate reward
-- γ→1: value all future rewards equally
+Finally, **γ** is the **discount factor**, with 0 ≤ γ ≤ 1. It controls how
+strongly the agent cares about rewards that will arrive in the future
+compared to rewards that arrive right now. If γ = 0, the agent is
+completely **myopic**: it only cares about the immediate reward. As γ
+approaches 1, the agent becomes increasingly **far‑sighted**, valuing
+future rewards almost as much as present ones.
 
 ### The RL Objective
 
-**Goal:** Find a policy π that maximizes expected cumulative discounted reward:
+The overall goal in reinforcement learning is to find a policy π that
+maximizes the **expected cumulative discounted reward**. Instead of only
+caring about the very next reward, we care about the whole future, but we
+discount it using a factor γ between 0 and 1:
 
 ```
 G_t = R_{t+1} + γR_{t+2} + γ²R_{t+3} + ... = Σ_{k=0}^∞ γ^k R_{t+k+1}
 ```
 
+Here G_t is called the **return** from time t: it is a single number that
+summarizes how good the rest of the episode is expected to be after time t
+if we follow a particular policy.
+
 **Why discount?**
-1. Uncertainty about far future
-2. Mathematical convenience (ensures finite sum)
-3. Preference for immediate rewards
+
+There are three main reasons to multiply future rewards by powers of γ
+instead of simply summing them without discount.
+
+First, the further into the future a reward is, the more **uncertain** it
+becomes. The game might end early, the environment might change, or our
+current policy might not actually reach that future situation. Giving
+slightly less weight to far‑future rewards reflects this uncertainty.
+
+Second, discounting gives us nice **mathematical properties**. With
+0 ≤ γ < 1 the infinite sum of rewards is guaranteed to be finite, which
+makes theoretical analysis and many algorithms (like value iteration)
+well‑behaved and numerically stable.
+
+Third, in many practical problems we have a natural **preference for
+earlier rewards**. Getting +1 point now is often better than maybe getting
+the same point much later (just like receiving 10€ today usually feels
+better than a promise of 10€ next year). The discount factor encodes this
+time preference: smaller γ means “more impatient”, while γ close to 1
+means “willing to wait a long time for future rewards”.
 
 ### Policies
 
-A policy π maps states to actions:
+A **policy** π is a rule for choosing actions based on the current
+state. You can think of it as the agent's behaviour: "When I see this
+state, what do I do?" In math notation we write a policy as a function
+that maps states to actions.
 
-**Deterministic policy:** a = π(s)
-- Always take the same action in a given state
+In a **deterministic policy**, the agent always takes the same action in a
+given state. Formally we write a = π(s). If you put the agent back into
+exactly the same situation, it will make exactly the same choice. A
+classic example is a shortest-path navigation policy that always moves
+directly toward the goal.
 
-**Stochastic policy:** π(a|s) = P(A_t=a | S_t=s)
-- Probability distribution over actions
-- Useful for exploration and continuous action spaces
+In a **stochastic policy**, written as π(a|s) = P(A_t = a | S_t = s), the
+output is not a single action but a **probability distribution** over
+actions. The agent will sometimes pick different actions even from the
+same state. This randomness is extremely useful for **exploration** (the
+agent keeps trying new things) and is essential in **continuous action
+spaces**, where the policy typically outputs the mean and spread of a
+Gaussian distribution over actions instead of a single fixed value.
 
 ### Value Functions
 
@@ -162,68 +213,101 @@ Q*(s,a) = R(s,a) + γ Σ_{s'} P(s'|s,a) max_{a'} Q*(s',a')
 
 ### Policy vs Value-Based Methods
 
-**Value-based methods:**
-- Learn value function (V or Q)
-- Derive policy from values: π(s) = argmax_a Q(s,a)
-- Examples: Q-learning, DQN, SARSA
+There are three broad families of RL algorithms that you will encounter
+throughout the course: **value‑based**, **policy‑based**, and
+**actor–critic** methods.
 
-**Policy-based methods:**
-- Directly learn policy π_θ(a|s)
-- Optimize θ to maximize expected return
-- Examples: REINFORCE, PPO, A3C
+**Value‑based methods** focus on learning a value function such as V(s)
+or Q(s, a). Once they have good estimates of these values, they derive a
+policy by choosing, in each state, the action with the highest estimated
+value: π(s) = argmax_a Q(s, a). Classic examples are tabular
+Q‑learning, SARSA, and DQN.
 
-**Actor-Critic methods:**
-- Learn both policy (actor) and value function (critic)
-- Best of both worlds
-- Examples: A2C, SAC, TD3
+**Policy‑based methods** skip the intermediate value function and instead
+learn the policy π_θ(a|s) directly. They treat the policy as a
+parameterized function (usually a neural network) and adjust its
+parameters θ to maximize expected return using policy gradient
+techniques. REINFORCE and PPO are examples of pure policy‑based methods.
+
+**Actor–critic methods** combine both ideas. They maintain an **actor**
+(the policy network) and a **critic** (a value network that estimates
+V(s) or Q(s, a)). The critic provides lower‑variance learning signals
+for the actor, while the actor focuses on choosing good actions. A2C,
+A3C, TD3, and SAC all fall into this actor–critic family.
 
 ### Exploration vs Exploitation
 
-**Exploitation:** Choose action with highest known value
-**Exploration:** Try other actions to discover potentially better options
+In every RL problem there is a tension between **exploitation** and
+**exploration**. Exploitation means choosing the action that currently
+looks best according to our value estimates. Exploration means trying
+other actions in case they turn out to be even better than we thought.
 
-**The dilemma:**
-- Too much exploitation → stuck in local optimum
-- Too much exploration → never leverage knowledge
+If we exploit too aggressively, we can get stuck in a **local optimum**:
+the agent keeps repeating a merely decent strategy and never discovers a
+much better one. If we explore too much, we keep trying random actions and
+never fully capitalize on what we have already learned.
 
-**Common strategies:**
+Several standard strategies are used to balance these two goals:
 
-1. **ε-greedy:**
-   - With probability ε: random action (explore)
-   - With probability 1-ε: best action (exploit)
+**ε‑greedy.** With ε‑greedy exploration we say: “Most of the time behave
+greedily, but occasionally try something random.” On each step we flip a
+biased coin. With probability ε we pick a random action (pure
+exploration); with probability 1−ε we choose argmax_a Q(s, a) (pure
+exploitation). Early in training ε is usually large (for example 1.0) and
+then decays over time as the value estimates become more reliable.
 
-2. **Softmax/Boltzmann:**
-   - Sample from: P(a) ∝ exp(Q(s,a)/τ)
-   - Temperature τ controls randomness
+**Softmax / Boltzmann exploration.** Instead of a sharp greedy‑versus‑
+random decision, softmax exploration treats Q‑values like **preferences**
+and converts them into a probability distribution:
+P(a) ∝ exp(Q(s, a) / τ). The **temperature** τ controls how random
+the choices are: large τ makes all actions almost equally likely, small
+τ makes the distribution peak more strongly around the best actions.
 
-3. **Upper Confidence Bound (UCB):**
-   - Choose action with highest upper confidence bound
-   - Balances exploitation with uncertainty
+**Upper Confidence Bound (UCB).** UCB methods come from multi‑armed
+bandits. They explicitly keep track of both the *estimated value* of each
+action and the *uncertainty* in that estimate. At each step they choose
+the action with the highest **upper confidence bound**, which adds a
+“bonus” for rarely tried actions. This gives a principled way to trade
+off exploitation and exploration.
 
-4. **Entropy bonus:**
-   - Add entropy term to encourage diverse actions
-   - Used in policy gradient methods
+**Entropy bonus.** In policy‑gradient methods we often add an extra term
+to the loss that encourages the policy’s action distribution to have high
+**entropy** (be more spread out). The agent is then rewarded slightly for
+keeping its options open rather than collapsing to a deterministic policy
+too early. Over time this entropy bonus can be reduced as the policy
+matures.
 
 ### Types of RL Algorithms
 
-**Model-based:**
-- Learn environment model P(s'|s,a) and R(s,a)
-- Use model for planning
-- Sample efficient but complex
+You will often see RL algorithms described as **model-based** or
+**model-free**, and as **on-policy** or **off-policy**.
 
-**Model-free:**
-- Learn value function or policy directly from experience
-- Simpler but less sample efficient
-- Most popular for complex environments
+**Model-based methods** try to learn an explicit model of the
+environment: the transition probabilities P(s' | s, a) and sometimes
+the reward function R(s, a). Once they have such a model, they can
+simulate outcomes and **plan** ahead using methods like dynamic
+programming or tree search. Model-based approaches can be very
+**sample-efficient** (they squeeze a lot of learning out of each real
+interaction) but they are often complex to implement and can be brittle
+if the learned model is inaccurate.
 
-**On-policy:**
-- Learn about policy currently being executed
-- Example: SARSA
+**Model-free methods** skip the explicit model and learn a value function
+or policy **directly from experience**. Q-learning, DQN, and PPO are all
+model-free. They tend to require more real environment interaction, but
+they are usually simpler and more robust in high-dimensional tasks like
+Atari or Rocket League.
 
-**Off-policy:**
-- Learn about optimal policy while following different policy
-- Example: Q-learning
-- Better sample efficiency
+An **on-policy** algorithm learns about the behavior of the policy it is
+currently executing. SARSA is on-policy: it updates Q-values assuming it
+will keep following the same ε-greedy strategy it used to collect the
+data.
+
+An **off-policy** algorithm learns about a *different* policy from the
+one that generated the data. Q-learning is off-policy: even if the agent
+behaves ε-greedily, the target uses max_a Q(s, a) as if it were acting
+greedily. Off-policy methods can be more **sample-efficient** because
+they can reuse experience collected under many different behavior
+policies.
 
 ## 💻 Practical Implementation
 

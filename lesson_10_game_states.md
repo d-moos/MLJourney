@@ -27,69 +27,72 @@ Good choices here often matter **more** than small changes to the RL algorithm.
 
 ### State Representation Principles
 
-We want the observation `s_t` to be a *useful summary* of the game at time `t`.
+We want the observation `s_t` to be a *useful summary* of the game at time `t`. A good
+state representation is often described as **Markov**, **compact**, **normalized**, and
+**informative**.
 
-A good state representation is:
+Being **Markov** means that, given `s_t`, the **future** does not depend on the
+**past**. In other words, `s_t` contains all the information you need to make good
+decisions and to predict what will happen next. For Rocket League, a single cropped
+visual frame is *not* Markov: from one still image you cannot tell the ball's velocity
+or where it was a moment ago. If you add explicit velocity features or stack several
+recent frames together, the state becomes **closer** to having the Markov property.
 
-- **Markov:** it contains enough information that, given `s_t`, the **future** does not
-  depend on the **past**. For Rocket League, a single cropped screenshot is *not*
-  Markov: you cannot tell the ball's velocity from one image. Adding velocities or
-  stacking frames makes it closer to Markov.
-- **Compact:** no unnecessary details. Exact grass texture or stadium audience pixels
-  rarely matter for control.
-- **Normalized:** features are on similar scales (e.g., positions divided by field size,
-  velocities divided by max speed). This helps neural nets train reliably.
-- **Informative:** focuses on task-relevant aspects: relative positions, who owns the
-  ball, where the goals are, how much boost you have, etc.
+The representation should also be **compact**, meaning it should not include
+unnecessary details that do not affect the task. The exact grass texture or the
+audience in the stands rarely matters for control, so including those pixels just
+increases input size and makes learning slower without adding useful signal.
 
-Bad states make learning nearly impossible (missing critical info) or very slow (huge
-irrelevant inputs).
+It is helpful for features to be **normalized**, with different quantities mapped onto
+roughly similar numeric ranges. For example, you might divide positions by the field
+size so they lie in `[-1, 1]`, and divide velocities by some maximum speed. Neural
+networks generally train more reliably when inputs are on comparable scales, because
+gradients are better behaved and one large-magnitude feature does not dominate the
+others.
+
+Finally, the state must be **informative** about the task itself. For a Rocket
+League-like game, this usually means focusing on things like the relative positions of
+cars and ball, who currently has possession, where the goals are, and how much boost
+you have. If key information is missing, the agent may never learn good behavior,
+because no policy can succeed without seeing what actually matters. Bad state designs
+can therefore make learning nearly impossible (when they omit critical information) or
+just very slow (when they include huge amounts of irrelevant input).
 
 ### Feature Types
 
-There are three broad approaches; in practice you often **combine** them.
+There are three broad approaches to constructing state features; in practice you often
+**combine** them.
 
-**1. Raw pixels (vision)**
+The first approach uses **raw pixels (vision)** as input. Here the observation is one
+or more images rendered from the game. You typically process these images with a
+convolutional neural network (CNN), as in DQN for Atari. To keep things efficient, the
+images are often converted to **grayscale** and resized to a smaller resolution (for
+example, 84×84 pixels) so that the input tensor is not too large. When using pixels it
+is also common to apply **frame stacking** (discussed below) so that the network can
+infer motion from a short history of frames rather than seeing only a single snapshot.
+The big advantage of raw pixels is that they are very general and require little
+game-specific knowledge; they also match how humans visually perceive the game. The
+downsides are that pixel inputs are high-dimensional, make networks slower to train,
+and can be harder to debug than more structured, human-designed features.
 
-- Input is one or more images rendered from the game.
-- Processed with a **CNN** (like in DQN for Atari).
-- Usually converted to **grayscale** and resized (e.g., 84×84) to reduce input size.
-- Often use **frame stacking** (see below) to give a sense of motion.
+The second approach is to build a **structured state** using hand-crafted features. In
+this case the observation is a vector of numbers that directly describes important game
+objects. For Rocket League, you might include the ball's position and velocity, the
+car's position, velocity, and rotation, whether the car is on the ground or in the air,
+and quantities like boost amount or jump/flip status. These feature vectors are usually
+**much lower dimensional** than raw pixels and much easier to normalize. They also
+make it easier for you, as the designer, to reason about what information the network
+is seeing and to debug strange behaviors.
 
-Pros:
-
-- Very general; requires minimal game-specific knowledge.
-- Matches how humans see the game.
-
-Cons:
-
-- High-dimensional; slow to train.
-- Harder to debug than structured features.
-
-**2. Structured state (hand-crafted features)**
-
-These are vectors of numbers that describe the game objects directly, e.g. for
-Rocket League:
-
-- Ball position and velocity
-- Car position, velocity, and rotation
-- Whether you are on the ground or in the air
-- Boost amount, jump / flip status
-
-These features are typically **much lower dimensional** than raw pixels and easier to
-normalize. They also make it easier to reason about what the network sees.
-
-**3. Derived features**
-
-On top of raw or structured features we can compute higher-level quantities, such as:
-
-- Distance from car to ball / goal
-- Angle between car's forward direction and the ball
-- Whether the ball is moving towards or away from the opponent's goal
-
-Derived features often encode **what we care about** more directly than raw positions.
-However, too much hand-designed structure can bias the agent or hide useful signals, so
-there is a trade-off.
+The third approach is to add **derived features** on top of raw pixels or structured
+state. These are higher-level quantities computed from more basic inputs, such as the
+distance from the car to the ball or goal, the angle between the car's forward
+direction and the ball, or a flag indicating whether the ball is currently moving
+towards or away from the opponent's goal. Derived features often encode **what we care
+about** for the task more directly than raw positions or velocities. However, too much
+hand-designed structure can bias the agent towards your intuitions and potentially hide
+useful signals that a more flexible representation might discover on its own, so there
+is always a trade-off.
 
 ### Frame Stacking and Temporal Information
 
@@ -133,11 +136,13 @@ r = 0.1 * velocity_toward_opponent_goal
 This encourages the agent to move the ball in the right direction, touch it often, and
 still strongly rewards actual goals.
 
-However, reward shaping is **dangerous** if done carelessly:
-
-- The agent might learn to farm the shaping terms instead of winning the game.
-- Example: reward only for "ball velocity towards goal" can produce agents that smash
-  the ball randomly, even into bad positions, as long as short-term velocity looks good.
+However, reward shaping is **dangerous** if done carelessly. Because the agent only
+optimizes what you explicitly reward, it may learn to exploit the shaping terms instead
+of actually winning the game. For example, if you reward only "ball velocity towards
+the opponent goal", the agent might happily smash the ball in ways that create short,
+fast bursts of movement towards the goal even if this leaves the ball in terrible
+positions right afterward. From the point of view of the shaping reward this behavior
+looks great, but the team may rarely score.
 
 A more principled approach is **potential-based shaping** (Ng et al., 1999), where you
 define a potential function \(\Phi(s)\) (e.g., negative distance to the opponent goal)
@@ -150,12 +155,14 @@ F(s, s') = γ Φ(s') - Φ(s)
 This preserves the optimal policy of the original MDP while still providing denser
 feedback.
 
-In practice for Rocket League-like games you will:
-
-- Start with a simple base reward (goals for/against).
-- Add a **small number** of carefully chosen shaping terms (e.g., ball towards goal,
-  touches, staying in play).
-- Watch replays to ensure the agent is not exploiting the reward in unintended ways.
+In practice, for Rocket League-like games you will usually start with a simple **base
+reward** that gives positive points for scoring a goal and negative points when a goal
+is scored against you. On top of this you can add a **small number** of carefully
+chosen shaping terms, such as a small reward for moving the ball towards the opponent's
+goal, for making controlled touches, or for keeping the ball in play. During
+experiments it is important to watch replays or visualize trajectories to check whether
+the agent is exploiting the reward in unintended ways, and to adjust or remove shaping
+terms that encourage obviously undesirable behavior.
 
 ## 💻 Practical Implementation
 

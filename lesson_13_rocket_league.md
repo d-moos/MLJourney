@@ -25,24 +25,47 @@ advanced techniques from Lessons 10–12.
 
 ### Rocket League RL Challenges
 
-Some key sources of difficulty:
+Rocket League is a rich but extremely challenging environment for reinforcement
+learning. Several properties of the game make it much harder than classic benchmarks
+like CartPole or Atari.
 
-- **High-dimensional state:** you must reason about full 3D car and ball physics:
-  positions, velocities, rotations, boost amounts, team scores, etc.
-- **Continuous and discrete actions mixed:** throttle, steering, pitch, yaw, roll are
-  continuous; jump/boost/handbrake are binary. This favors algorithms like PPO or SAC.
-- **Long horizons:** games last up to 5 minutes, so actions taken early may only pay
-  off much later (credit assignment is hard).
-- **Multi-agent interactions:** 1v1, 2v2, or 3v3 means your environment includes
-  teammates and opponents that may also learn or behave unpredictably.
-- **Complex physics and mechanics:** bounces, wall rides, aerials, demos, recoveries,
-  kickoffs, and more.
-- **Sparse primary rewards:** goals are rare events compared to the number of timesteps.
+First, the game has a **high-dimensional state**. To play well, your agent must reason
+about full 3D car and ball physics: positions and velocities in three dimensions,
+rotations (pitch, yaw, roll), boost amounts, team scores, and other contextual
+information such as kickoff positions or remaining time. All of this information has
+to be compressed into a vector that a neural network can process while still
+preserving what is relevant for good decision-making.
 
-Because of this, **naively applying a standard RL algorithm** often leads to agents that
-drive in circles, chase the ball aimlessly, or learn brittle tricks. The rest of this
-lesson shows how to structure observations, rewards, and training to make learning
-feasible.
+Second, the game combines **continuous and discrete actions**. Controls like throttle,
+steering, pitch, yaw, and roll are naturally continuous in the range `[-1, 1]`, while
+actions such as jump, boost, and handbrake are binary on/off switches. This mixture
+makes simple discrete-action algorithms (like plain DQN) awkward to apply and strongly
+favors **policy-gradient methods with continuous action spaces** such as PPO or SAC.
+
+Third, Rocket League has **long horizons**. A match can last up to five minutes, and
+actions taken early (like grabbing boost or rotating to a safe defensive position) may
+only pay off much later when a scoring opportunity or save appears. This makes
+**credit assignment** difficult: it is hard for the algorithm to know which earlier
+decisions deserve credit for later rewards.
+
+Fourth, the game involves **multi-agent interactions**. In 1v1, 2v2, or 3v3 modes your
+environment includes both teammates and opponents whose behavior may be scripted,
+stochastic, or also learning. This means the dynamics of the environment can change as
+policies change, and coordination between agents (for example, not both chasing the
+ball) becomes an important part of the problem.
+
+Fifth, Rocket League features **complex physics and mechanics** such as ball bounces,
+wall rides, aerials, demolitions, and recovery maneuvers after landing or being bumped.
+To master the game, an agent must discover and exploit these mechanics, which greatly
+increases the diversity of possible trajectories.
+
+Finally, the game provides **sparse primary rewards**: goals are rare events compared
+with the huge number of timesteps in a match. Without additional shaping, an agent may
+play thousands of steps before ever seeing a non-zero reward signal. Because of all
+these factors, **naively applying a standard RL algorithm** often leads to agents that
+drive in circles, chase the ball aimlessly, or learn brittle tricks that fail against
+slightly different opponents. The rest of this lesson shows how to structure
+observations, rewards, and training so that learning becomes feasible.
 
 ### RLGym Environment
 
@@ -59,13 +82,13 @@ observation dictionary might look like:
 }
 ```
 
-Conceptually:
-
-- The **player** part encodes your own cars position/orientation, linear velocity,
-  rotation, and resources like boost.
-- The **ball** part encodes position and velocity; you often normalize these by field
-  dimensions and maximum speeds (Lesson 10).
-- **Teammates** and **opponents** provide equivalent information for other cars.
+Conceptually, the observation can be divided into several parts. The **player** section
+encodes your own car's position and orientation in the arena, its linear velocity and
+rotation, and resources such as current boost amount. The **ball** section encodes the
+ball's position and velocity; these are often normalized by field dimensions and
+maximum speeds (as discussed in Lesson 10) so that all features lie in comparable
+ranges. The **teammates** and **opponents** sections provide similar information for
+other cars on the field.
 
 In practice, most implementations **flatten and normalize** this information into a
 single feature vector (as in the `StateEncoder` later in this lesson). Good feature
@@ -89,7 +112,8 @@ SAC, TD3) shine.
 ### Reward Function Design
 
 Because goals are rare, you almost always need **shaped rewards** to give the agent
-useful feedback at intermediate steps. A common pattern is a **multi-component reward**:
+useful feedback at intermediate steps. A common pattern is a **multi-component reward**
+that mixes several terms, each targeting a different aspect of good play:
 
 ```python
 reward = (
@@ -102,67 +126,75 @@ reward = (
 )
 ```
 
-Interpretation:
+Each term has an intuitive meaning. The `goal_scored` component is a large, sparse
+reward tied directly to the main objective of the game: putting the ball in the
+opponent's net. The `ball_touch` term provides a smaller but more frequent reward that
+encourages basic competence such as reliably reaching and touching the ball. The
+`velocity_toward_ball` and `velocity_toward_goal` terms reward situations where the
+ball or your car are moving in a useful direction, even before an actual shot occurs;
+this helps the agent learn to push the ball upfield and create pressure.
 
-- `goal_scored`: large, sparse reward for the main objective.
-- `ball_touch`: encourages basic competence (just touching the ball reliably).
-- `velocity_toward_ball` and `velocity_toward_goal`: reward moving the ball in a useful
-  direction, even before a shot.
-- `boost_pickup`: encourages collecting resources rather than driving empty.
-- `demo_opponent`: can be positive or negative depending on whether demos help your
-  strategy; here it is penalized.
+The `boost_pickup` term encourages the agent to collect boost pads rather than driving
+around empty, which is crucial for maintaining speed and enabling aerial plays. The
+`demo_opponent` term can be either positive or negative depending on your training
+goals; in this example it is penalized to discourage reckless demolitions that might
+hurt overall positioning.
 
-The exact coefficients are **task-dependent**; you should expect to iterate. Always
-watch replays to ensure the agent is not exploiting a shaping term in a weird way
-(Lesson 10 & 11).
+The exact coefficients multiplying these terms are **task-dependent**, and you should
+expect to iterate on them. After each change, it is important to watch replays to make
+sure the agent is not exploiting a shaping term in an unintended way (as discussed in
+Lessons 10 and 11).
 
-To manage difficulty, you can implement **curriculum rewards** that change over time:
-
-- **Stage 1:** reward **any ball touch**; ignore goals.
-- **Stage 2:** reward touches that move the ball towards the opponent goal.
-- **Stage 3:** add large rewards for scoring; reduce basic touch reward.
-- **Stage 4:** introduce team coordination objectives or defensive skills.
-
-This mirrors curriculum learning: start with simple skills and gradually align the
-reward with full-game objectives.
+To manage difficulty, you can implement **curriculum rewards** that change over time.
+In an early training stage you might reward **any ball touch** and ignore goals
+entirely, so the agent first learns to reliably reach the ball. In a second stage you
+can start rewarding touches that move the ball towards the opponent's goal, teaching
+the agent to push in the correct direction. Later, you add large rewards for actually
+scoring goals and gradually reduce the basic touch reward so that the agent focuses on
+converting pressure into points. In advanced stages you can introduce terms for team
+coordination or defensive skills. This mirrors curriculum learning: start with simple
+skills and gradually align the reward with full-game objectives.
 
 ### Training Strategies
 
 Given the complexity and cost of each environment step, training strategy matters a
-lot. Three ideas are especially important:
+lot. Three ideas are especially important.
 
 **1. Self-Play**
 
-- Train your agent against **copies or past versions of itself**.
-- As it improves, its opponents naturally become stronger, creating an automatic
-  curriculum of difficulty.
-- This reduces reliance on hand-crafted scripted bots and can uncover novel tactics.
+In self-play, you train your agent against **copies or past versions of itself** rather
+than only against fixed scripted bots. As the current agent improves, the opponents it
+faces naturally become stronger as well, creating an automatic curriculum of
+difficulty. This setup reduces reliance on hand-crafted bots and can uncover novel
+tactics that emerge purely from competition between learning agents.
 
-You still need safeguards against forgetting (Lesson 11): maintain an opponent pool and
-evaluate against fixed baselines (e.g., built-in bots or frozen earlier agents).
+However, as you saw in Lesson 11, self-play also carries risks such as catastrophic
+forgetting or cycling between strategies. To mitigate these, you typically maintain an
+**opponent pool** containing snapshots of your agent from different training stages and
+regularly evaluate against **fixed baselines** such as built-in bots or frozen older
+agents. This gives you a stable measure of progress even when both sides are learning.
 
 **2. Bot and Data Diversity**
 
-Pure self-play can lead to narrow meta-strategies. To broaden behavior, mix in:
-
-- Built-in **Rookie** and **All-Star** bots.
-- **Past agent checkpoints** from different training stages.
-- Optionally, **human replay data** for behavior cloning warm-starts.
-
-This diversity makes it harder for the agent to overfit to a single opponent style.
+Pure self-play can lead to narrow meta-strategies that only work against copies of your
+own agent. To broaden behavior, you can mix in a variety of opponents and data
+sources. For example, you might alternate games against built-in **Rookie** and
+**All-Star** bots, against **past agent checkpoints** from different points in
+training, and optionally pretrain the policy using **human replay data** via behavior
+cloning before fine-tuning with RL. This diversity makes it harder for the agent to
+overfit to a single opponent style and encourages more robust strategies.
 
 **3. Parallel and Distributed Training**
 
-Rocket League environments are relatively expensive to step. To train in a reasonable
-time, you typically run **8–32 parallel instances** (or more on clusters):
+Rocket League environments are relatively expensive to step, especially when running
+the full game. To train in a reasonable time, you typically run **8–32 parallel
+instances** (or more on clusters). Each environment runs in its own process or even on
+different machines, while a central learner gathers trajectories, performs gradient
+updates, and broadcasts updated parameters back to the workers.
 
-- Each environment runs in its own process (or even on different machines).
-- A central learner gathers trajectories, performs updates, and broadcasts new
-  parameters.
-
-This is conceptually the same as the **parallel environments** in Lesson 11, just at a
-larger scale. It allows you to reach tens of millions of timesteps in days instead of
-weeks.
+This architecture is conceptually the same as the **parallel environments** in
+Lesson 11, just at a larger scale suitable for a complex 3D game. By collecting data
+in parallel you can reach tens of millions of timesteps in days instead of weeks.
 
 Together, good **state encoding**, **reward shaping**, **curriculum**, **self-play**, and
 **parallel training** turn Rocket League from an impossible RL problem into a
@@ -439,17 +471,21 @@ class AerialReward(RewardFunction):
 ### Exercise 3: Team Play (Hard)
 Train 2v2 agents with passing behaviors.
 
-**Challenges:**
-- Credit assignment (who caused goal?)
-- Coordination (don't both go for ball)
-- Communication (centralized critic?)
+In this exercise you focus on **team play** rather than just solo ball chasing. One key
+challenge is **credit assignment**: when a goal is scored after a series of passes and
+rotations, it can be difficult to determine which player and which earlier actions
+deserve credit. Another challenge is **coordination**: the agents must learn not to
+both chase the ball at the same time and instead take complementary roles such as
+attacker and defender. Finally, you may need some form of **communication or shared
+information**, for example via a centralized critic that sees the state of both cars
+and can encourage coordinated strategies.
 
 ### Exercise 4: Advanced Mechanics (Hard)
-Implement curriculum learning for:
-1. Ground hits
-2. Wall hits
-3. Simple aerials
-4. Advanced aerials (air roll shots)
+Implement curriculum learning for a progression of mechanics: start with consistent
+**ground hits**, then move to **wall hits**, then **simple aerials**, and finally
+**advanced aerials** such as air roll shots. The idea is to design separate training
+tasks or reward stages for each mechanic so that the agent can master them one by one
+instead of trying to learn everything at once.
 
 ### Exercise 5: RLBot Competition (Very Hard)
 **Final Project:** Enter RLBot tournament
@@ -471,28 +507,44 @@ Implement curriculum learning for:
 ### Common Issues
 
 **1. Training is unstable**
-- Normalize all inputs
-- Use reward normalization
-- Reduce learning rate
-- Increase batch size
+
+If training loss or episode returns fluctuate wildly, the first step is often to
+**normalize all inputs** so that state features lie in comparable ranges. You can also
+apply **reward normalization** so that very large or very small rewards do not dominate
+learning. Reducing the **learning rate** and increasing the **batch size** both make
+updates smaller and more stable, which is particularly important in a noisy, complex
+environment like Rocket League.
 
 **2. Agent doesn't learn basic mechanics**
-- Simplify reward function
-- Use curriculum learning
-- Check action space scaling
-- Verify observation encoding
+
+If your agent never learns to hit the ball or drive coherently, the reward function may
+be too complicated or too focused on goals. Try **simplifying the reward function** so
+that you strongly reward easy-to-achieve behaviors such as ball touches. Introducing a
+clear **curriculum**, where you first train on simple tasks and only later add more
+complex objectives, can also help. Additionally, double-check **action space scaling**
+and **observation encoding** to ensure that actions map correctly to in-game controls
+and that important information (like ball position) is not missing or incorrectly
+scaled.
 
 **3. Slow training**
-- Increase game_speed (100x)
-- Use more parallel environments
-- Enable GPU acceleration
-- Reduce observation complexity
+
+Rocket League is computationally heavy, so training may feel extremely slow. You can
+often speed things up by increasing the environment's **`game_speed`** parameter (for
+example, to 100x) so that more in-game time passes per real second. Running **more
+parallel environments** allows you to collect experience faster, and using **GPU
+acceleration** speeds up neural network computations. If performance is still an
+issue, consider **reducing observation complexity** so that each step is cheaper to
+process.
 
 **4. Agent gets stuck in local optimum**
-- Increase exploration (entropy coefficient)
-- Use self-play with diverse opponents
-- Implement curiosity-driven exploration
-- Reset to earlier checkpoints
+
+Sometimes an agent discovers a mediocre but easy strategy (for example, camping in
+front of the ball) and then fails to improve further. In this case you may need more
+**exploration**, such as increasing the entropy coefficient in PPO to encourage more
+varied actions. Combining this with **self-play against diverse opponents** and
+**curiosity-driven exploration** can push the agent out of local optima. If things go
+badly wrong, you can also **reset to earlier checkpoints** that performed better and
+try new hyperparameters or reward designs from there.
 
 ### Performance Optimization
 

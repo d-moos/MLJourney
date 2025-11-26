@@ -74,49 +74,69 @@ We **did not** need to know the transition probabilities; we just used the exper
 
 #### Key Properties
 
-- **Model-free:** No need to know \(P(s'\mid s,a)\) or \(R(s,a)\) analytically
-- **Off-policy:** Even if the agent behaves with an ε‑greedy policy, the target uses
-  `max_{a'} Q(s', a')` — it learns about the *optimal* policy
-- **Convergence (tabular case):** If every state–action pair is visited infinitely often and the
-  learning rate decays appropriately, Q-learning converges to \(Q^*\)
+Tabular Q-learning has several important characteristics that will come
+up again and again when we move to deep RL.
+
+First, it is **model‑free**. The algorithm never tries to learn
+transition probabilities \(P(s'\mid s,a)\) or the reward function
+\(R(s,a)\) in closed form. Instead, it learns directly from raw
+experience: states, actions, rewards, and next states.
+
+Second, it is **off‑policy**. Even if the agent actually behaves using an
+ε‑greedy policy (sometimes taking random actions), the target in the
+update uses `max_{a'} Q(s', a')`. That means the algorithm is learning
+values as if it were following the **greedy optimal policy**, not
+necessarily the behaviour policy used to collect the data.
+
+Finally, in the **tabular case** we can prove a **convergence** result:
+if every state–action pair is visited infinitely often and the learning
+rate is decreased appropriately over time, Q‑learning will converge to
+the true optimal action‑value function \(Q^*\).
 
 ### Temporal Difference (TD) Learning
 
-Temporal Difference learning is the more general idea underlying Q-learning.
-Instead of waiting until the end of an episode to see the full return, we **bootstrap**:
+Temporal Difference learning is the more general idea underlying
+Q‑learning. Instead of waiting until the end of an episode to see the
+full return, we **bootstrap**.
 
-> **Bootstrapping** here means we use our **current value estimate** (e.g.,
-> `V(s')` or `Q(s', a')`) inside the target, instead of waiting to compute the
-> full return `G_t` from actual future rewards.
+Here, **bootstrapping** means that we plug our **current value
+estimate** (for example `V(s')` or `Q(s', a')`) into the update target,
+instead of computing the entire return `G_t` from all future rewards.
 
-- **Monte Carlo:**
-  - Wait until the episode finishes
-  - Compute the *actual* return \(G_t\) and update using that
+In **Monte Carlo** methods we wait until the episode finishes, compute
+the *actual* return \(G_t\) for each visited state, and then update the
+value estimate using that full return:
 
-  ```
-  V(s) ← V(s) + α [ G_t − V(s) ]
-  ```
+```
+V(s) ← V(s) + α [ G_t − V(s) ]
+```
 
-- **TD(0):**
-  - Update immediately after each step using the **one‑step lookahead** target
+In **TD(0)** we do not wait. Right after each step we update using a
+**one‑step lookahead** target that uses the current estimate of the next
+state's value:
 
-  ```
-  V(s) ← V(s) + α [ r + γ V(s') − V(s) ]
-  ```
+```
+V(s) ← V(s) + α [ r + γ V(s') − V(s) ]
+```
 
-Advantages of TD methods:
+TD methods have several advantages. They can **learn online** while the
+episode is still unfolding, rather than only at the end. They naturally
+handle **continuing tasks** that do not have clear terminal states. And
+their estimates typically have **lower variance** than Monte Carlo
+returns, because they avoid summing many random future rewards, although
+they may be slightly biased because they rely on current value
+approximations.
 
-- Can **learn online** while the episode is still unfolding
-- Work in **continuing tasks** (no clear episode end)
-- Typically **lower variance** than Monte Carlo (but can be slightly biased)
-
-Q-learning is simply **TD(0 applied to action-values** instead of state-values).
+Q‑learning is simply TD(0) **applied to action‑values** instead of
+state‑values.
 
 ### ε-Greedy Exploration
 
-If we always pick `argmax_a Q(s,a)` from the table, we might get stuck in a suboptimal
-region because we never try other actions. ε‑greedy is the simplest way to ensure
-exploration:
+If we always picked `argmax_a Q(s,a)` from the table, we might get stuck
+in a suboptimal region because we would never try other actions that
+currently look slightly worse. **ε‑greedy** exploration is the simplest
+way to make sure we keep trying alternatives, especially early in
+training.
 
 ```python
 if random() < epsilon:
@@ -125,18 +145,12 @@ else:
     action = argmax_a Q[s, a]     # Exploit best known action
 ```
 
-Typical schedule:
-
-```python
-epsilon_start = 1.0    # very exploratory
-epsilon_end = 0.05     # mostly greedy
-epsilon_decay = 500    # decay rate in episodes
-
-epsilon = epsilon_end + (epsilon_start - epsilon_end) * math.exp(-episode / epsilon_decay)
-```
-
-Early in training the agent tries many random moves; later it mostly exploits what it
-has learned, with a small chance of trying something new.
+In practice we often use a **decaying ε schedule**. We start with a high
+ε (for example 1.0), so the agent behaves almost randomly and explores a
+wide range of states. Over time we gradually reduce ε towards a small
+value like 0.05 so that the agent mostly exploits what it has learned,
+while still occasionally trying something new. An exponential decay
+schedule, as shown in the code, is a convenient way to implement this.
 
 ### SARSA vs Q-Learning
 
@@ -160,13 +174,14 @@ Q(s,a) ← Q(s,a) + α [ r + γ max_{a'} Q(s', a') − Q(s,a) ]
                        best possible next action
 ```
 
-**Intuition:**
-
-- SARSA answers: *"If I keep behaving with this ε‑greedy policy, what return do I get?"*
-- Q-learning answers: *"If I behave optimally from the next step onward, what return do I get?"*
-
-In practice, SARSA can be **safer** in some environments (e.g., cliff walking), while
-Q-learning can be more aggressively optimal once learning has converged.
+**Intuition.** SARSA answers the question: *"If I keep behaving with this
+ε‑greedy policy, what return do I get?"* Q‑learning instead asks:
+*"If I behave optimally from the next step onward, what return do I
+get?"* In practice, SARSA can be **safer** in some environments (for
+example, cliff walking), because it takes into account the fact that the
+agent will continue to behave ε‑greedily and may sometimes take risky
+exploratory actions. Q‑learning, by assuming greediness from the next
+step, can be more aggressively optimal once learning has converged.
 
 ## 💻 Practical Implementation
 

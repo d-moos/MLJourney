@@ -51,13 +51,14 @@ Key property (Ng et al., 1999): if \(\Phi\) is any real-valued function on state
 adding this shaping term **does not change which policies are optimal**. It only alters
 the *learning dynamics* by providing denser feedback.
 
-Intuition:
-
-- If you move to a state with higher potential (e.g., closer to scoring), you get a
-  positive shaping reward.
-- If you move away, you get a negative shaping reward.
-- Because the shaping term is a discounted difference of a potential, it forms a
-  “telescoping sum” along trajectories and cancels out when comparing full returns.
+Intuitively, if you move to a state with **higher potential** (for example, closer to
+scoring or otherwise "better" according to \(\Phi\)), you receive a positive shaping
+reward. If you move to a state with **lower potential**, you receive a negative
+shaping reward. Because the shaping term is defined as a **discounted difference** of
+the potential, these contributions form a kind of "telescoping sum" along a
+trajectory and largely cancel out when you compare full returns between different
+policies. That is why potential-based shaping can change *how quickly* you learn
+without changing *which* policy is optimal.
 
 For Rocket League, \(\Phi(s)\) could be something like **minus the distance from the
 ball to the opponent’s goal**, possibly with extra terms for ball height or control.
@@ -67,26 +68,30 @@ ball to the opponent’s goal**, possibly with extra terms for ball height or co
 Training a strong agent **from scratch on the full game** is often extremely hard:
 the state space is huge, rewards are sparse, and exploration is difficult.
 
-Curriculum learning addresses this by training on a sequence of tasks of increasing
-difficulty:
+Curriculum learning addresses this by training on a **sequence of tasks** of
+increasing difficulty. You first design a set of tasks \(T_1, T_2, ..., T_n\) ranging
+from very easy to quite challenging. The agent is trained on the easiest task
+\(T_1\) until it reaches some performance threshold that you define (for example,
+scoring 80% of the time). Once that level is reached, you switch the agent to the
+next task \(T_2\). To avoid forgetting the earlier skills, you may occasionally mix
+in some episodes from \(T_1\) while primarily training on \(T_2\). You continue this
+process, advancing through the tasks, until the agent can reliably handle the full
+target task.
 
-1. Design a set of tasks \(T_1, T_2, ..., T_n\) from easy to hard.
-2. Train the agent on \(T_1\) until it reaches a performance threshold.
-3. Move to \(T_2\), possibly mixing in some \(T_1\) to prevent forgetting.
-4. Continue until the agent can handle the full task.
+As a concrete Rocket League example, you might start with a very simple task where the
+agent only needs to **hit a stationary ball** into an empty goal from short range.
+Once it can do that reliably, you can progress to hitting a **slow-moving ball** that
+is rolling towards or away from the car. Later tasks can focus on specific advanced
+skills, such as **aerial touches** in a simplified setup, and finally move on to
+playing **full 1v1 games** against opponents.
 
-**Rocket League example curriculum:**
-
-1. **Hit a stationary ball** into an empty goal from short range.
-2. **Hit a slow-moving ball** rolling towards/away from you.
-3. **Practice aerial touches** in simplified setups.
-4. **Play full 1v1 games** with opponents.
-
-Good curricula:
-
-- Decompose skills (driving straight, turning, hitting, recovering, aerials).
-- Start with tasks where *random behavior sometimes gets reward*, so learning can begin.
-- Progress when success is consistently high (e.g., 80%+), not on a fixed episode count.
+Good curricula usually **decompose complex skills** into simpler components (driving
+straight, turning accurately, hitting the ball, recovering after a jump, performing
+aerials) and start with tasks where *random behavior sometimes gets reward* so that
+learning can get off the ground. Rather than moving to the next stage after a fixed
+number of episodes, you typically progress only when success is consistently high
+(for example, success rate above 80%), ensuring that the agent has actually mastered
+each subtask before increasing difficulty.
 
 ### Parallel Environments
 
@@ -94,7 +99,7 @@ Single-env training is often **too slow** for large problems: you spend most of 
 time waiting for the environment to step. Running **many environments in parallel**
 solves this by collecting experiences simultaneously.
 
-Conceptually:
+Conceptually you maintain a list of environments and step all of them in lockstep:
 
 ```python
 envs = [make_env() for _ in range(num_envs)]
@@ -105,11 +110,13 @@ states = [env.reset() for env in envs]
 #   - accumulate a big batch of transitions
 ```
 
-Benefits:
-
-- Much **faster data collection** for CPU-bound environments
-- More **diverse experiences** in each batch (different random seeds, states)
-- Smoother learning curves (each update averages over many trajectories)
+This parallel rollout setup brings several important benefits. First, it allows much
+**faster data collection** for CPU-bound environments, because many environments step
+forward at the same time instead of waiting on just one. Second, each update is based
+on data coming from different environments with different random seeds, which gives
+you more **diverse experiences** in every batch. Finally, because each gradient update
+is averaged over many trajectories at once, the resulting learning curves tend to be
+**smoother** and less noisy.
 
 This is exactly what libraries like Stable-Baselines3’s `SubprocVecEnv` do under the
 hood: spawn multiple processes, each running its own environment instance.
@@ -117,25 +124,25 @@ hood: spawn multiple processes, each running its own environment instance.
 ### Self-Play
 
 In competitive games, fixed scripted opponents quickly become too easy or exploitable.
-**Self-play** lets the agent continuously generate challenging opponents:
+**Self-play** lets the agent continuously generate challenging opponents by playing
+against **copies of itself** or agents drawn from a **pool of past versions**. As the
+current agent improves, the opponents it faces also tend to become stronger, which
+automatically creates a **curriculum of increasingly difficult opponents**.
 
-- At each training stage the agent plays against **copies of itself** or a **pool of
-  past versions**.
-- As the agent improves, the opponents it faces also become stronger.
-- This naturally creates a **curriculum of increasingly difficult opponents**.
+However, self-play introduces several challenges. Because the opponent is always
+being updated, the environment becomes **non-stationary**: the distribution of states
+and rewards keeps changing as your own policy changes. The agent can also **forget**
+how to beat older strategies if training always focuses on the most recent version of
+the opponent. Large systems like AlphaStar mitigate this using **league training**, in
+which there is a pool of different agent roles and skill levels that are sampled
+during training to maintain diversity.
 
-However, self-play introduces challenges:
-
-- The opponent is always changing, making the environment **non-stationary**.
-- The agent can **forget** how to beat older strategies if training always focuses on
-  the latest opponent.
-- Large systems (like AlphaStar) use **league training**: a pool of different agent
-  roles and skill levels to maintain diversity.
-
-Practical tips:
-
-- Save snapshots of your agent periodically and sample opponents from this pool.
-- Evaluate against a **fixed benchmark** (e.g., built-in bots) to measure real progress.
+In practice, it helps to save **snapshots** of your agent periodically and sample
+opponents from this pool during training, so that the agent remains strong against a
+range of past strategies. It is also important to evaluate against a **fixed
+benchmark** (such as built-in bots or a frozen older agent) to get a reliable sense of
+real progress, since raw win-rate in self-play can be misleading when both players are
+learning together.
 
 ### Intrinsic Motivation (Curiosity and Exploration Bonuses)
 
@@ -156,10 +163,11 @@ r_intrinsic = || f(s') - f̂(s') ||²
 Here `f̂(s')` is the forward model’s prediction and `f(s')` is some learned feature
 representation of the true next state. High error → high intrinsic reward.
 
-Effect:
-
-- The agent seeks out transitions where its world model is wrong.
-- Over time, as the model improves, the bonus for familiar states shrinks.
+The effect of this curiosity bonus is that the agent actively seeks out transitions
+where its world model is wrong, because those produce larger intrinsic rewards. Over
+time, as the forward model becomes more accurate on familiar states, the intrinsic
+bonus for revisiting them shrinks, naturally pushing the agent to explore new parts of
+the environment.
 
 **2. Count-based / novelty bonuses**
 
@@ -170,8 +178,9 @@ states more:
 r_intrinsic(s) = 1 / √(count(s))
 ```
 
-- Early visits to a state give a large bonus.
-- As `count(s)` grows, the bonus fades, pushing the agent to explore new regions.
+With this formula, early visits to a given state give a **large bonus**, but as
+`count(s)` grows, the intrinsic reward fades. This gradually pushes the agent to
+explore new regions instead of looping over the same familiar states forever.
 
 In practice you rarely use intrinsic reward **alone**; you mix it with the task reward:
 

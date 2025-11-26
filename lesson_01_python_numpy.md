@@ -20,12 +20,33 @@ If you encounter unfamiliar ML, deep learning, or RL terms in this lesson, see t
 
 ### Why NumPy for Machine Learning?
 
-Python lists are flexible but slow for numerical computation. NumPy provides:
+Python lists are very flexible, but they are not designed for heavy
+numerical computation. Each element is a separate Python object, and
+operations are executed in the Python interpreter, which adds overhead on
+every loop iteration. NumPy was built specifically for **fast numerical
+computing** and gives you several crucial advantages.
 
-- **Fast operations:** C-level performance for array operations
-- **Vectorization:** Apply operations to entire arrays without loops
-- **Memory efficiency:** Contiguous memory storage
-- **Broadcasting:** Automatic expansion of dimensions for compatible operations
+First, NumPy offers **fast operations** because most array operations are
+implemented in optimized C code under the hood. When you write
+`x + y` for two NumPy arrays, the actual work happens in a tight
+compiled loop instead of a Python `for` loop, which can easily be
+10–100× faster.
+
+Second, NumPy encourages **vectorization**: you express computations in
+terms of whole-array operations rather than explicit element-wise loops.
+This not only makes your code shorter and clearer, it also lets NumPy
+execute large chunks of work in a single optimized call.
+
+Third, NumPy arrays use **contiguous memory storage** with a fixed data
+type (for example all 32‑bit floats). This layout is friendly to the CPU
+cache and SIMD instructions, which is a big reason why scientific and
+ML code is written with NumPy arrays instead of plain lists.
+
+Finally, NumPy supports **broadcasting**, a set of rules that let you
+combine arrays of different but compatible shapes without manually
+expanding them. For example, you can add a 1D bias vector to every row
+of a 2D matrix, and NumPy will automatically “stretch” the smaller array
+along the missing dimension.
 
 ### Core Concepts
 
@@ -82,11 +103,18 @@ matrix = row + col                  # shape: (3, 3)
 
 #### 4. Why This Matters for RL
 
-In RL, you'll frequently:
-- Process batches of states (2D/3D arrays)
-- Apply actions across multiple environments simultaneously
-- Compute rewards for many transitions at once
-- Update Q-values or policy parameters using vectorized math
+In reinforcement learning you will constantly manipulate **batches of
+numeric data**. A single state might be a small vector, but during
+training you typically process many states at once as a 2D or 3D array
+(for example, a batch of image frames).
+
+You will also apply **actions across multiple environments
+simultaneously** when you use vectorized environments, compute **rewards
+for many transitions in one go**, and update **Q‑values or policy
+network parameters** using matrix multiplications and other vectorized
+operations. All of this becomes natural and efficient when your data is
+stored in NumPy arrays and you think in terms of array operations
+instead of Python loops.
 
 **Example:** Computing Q-values for a batch of states
 

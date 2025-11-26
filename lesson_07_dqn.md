@@ -93,9 +93,16 @@ batch = random_sample(buffer, batch_size)
 
 Benefits:
 
-- Breaks short-term correlation between samples
-- Allows **re-use** of past experience (better sample efficiency)
-- Averages over many transitions, which **smooths** updates
+Storing transitions in a replay buffer and sampling them at random
+**breaks the short-term correlation** between successive steps. Each mini
+batch now looks more like an independent sample from some overall
+experience distribution, which is much friendlier to stochastic gradient
+methods. Replay also lets you **re-use past experience** many times
+instead of throwing it away after a single update, which greatly
+improves sample efficiency when environment interactions are expensive.
+Finally, because each update is averaged over many transitions drawn
+from different points in time, the targets tend to change more smoothly
+from step to step, which **stabilizes** learning.
 
 ### Target Networks
 
@@ -193,29 +200,35 @@ This simple change often improves stability and final performance.
 Some states are good or bad regardless of which action you take (e.g., already scored a
 goal). In those cases it is wasteful to learn separate Q-values for every action.
 
-Dueling networks decompose
+Dueling networks decompose the Q-value into two parts,
 
 ```text
 Q(s, a) = V(s) + A(s, a)
 ```
 
-where
-
-- `V(s)` is the **state value** (how good is this state overall?)
-- `A(s, a)` is the **advantage** of action `a` in state `s`
-
-This architecture can learn more efficiently in many environments.
+where `V(s)` is the **state value** (how good this state is overall,
+regardless of which action you take) and `A(s, a)` is the
+**advantage** of a particular action in that state (how much better or
+worse this action is compared to the average action). This
+decomposition lets the network share information across actions in
+states where most actions are similarly good or bad, and it has been
+found to learn more efficiently in many environments.
 
 **Prioritized Experience Replay – focus on important transitions**
 
-In standard replay we sample uniformly from the buffer. Prioritized Replay instead
-samples transitions with probability roughly proportional to the **magnitude of their
-TD error**.
+In standard replay we sample uniformly from the buffer. Prioritized
+Replay instead samples transitions with probability roughly
+proportional to the **magnitude of their TD error**.
 
-- Large TD error → we were very surprised → likely to learn a lot → sample more often
-- Small TD error → we already understand this transition → sample less often
-
-This can accelerate learning, especially in sparse-reward tasks.
+Intuitively, a **large TD error** means the network was very surprised:
+its prediction for that transition was far from the new target. Such
+cases are often the ones from which the agent can learn the most, so we
+want to **sample them more often**. A **small TD error** suggests that
+the transition is already well understood; sampling it many more times
+is unlikely to change the network much, so we can **sample it less
+often**. By allocating more updates to high-error transitions,
+prioritized replay can noticeably accelerate learning, especially in
+**sparse-reward** environments where informative transitions are rare.
 
 ## 💻 Practical Implementation
 

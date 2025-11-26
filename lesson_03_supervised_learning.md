@@ -38,9 +38,18 @@ Input (x) → Model (f_θ) → Prediction (ŷ) → Compare to Truth (y) → Upda
 | **Exploration** | Not needed | Critical for learning |
 
 **Why learn supervised learning for RL?**
-- Value functions V(s) and Q(s,a) are learned via supervised regression
-- Policy networks can use supervised loss (behavior cloning)
-- Many RL algorithms reduce to supervised learning sub-problems
+
+Supervised learning is not a separate, unrelated topic; it is a core
+building block inside many RL algorithms. When you train a value
+function such as **V(s)** or **Q(s, a)**, you are effectively doing
+**supervised regression**: the state (or stateaction pair) is the input
+`x`, and your algorithm constructs a numeric target that you want your
+network to match. Likewise, when you do **behavior cloning** you treat
+the problem as supervised **classification**: the state is the input and
+the expertchosen action is the label. Even more complex methods (like
+actorcritic) repeatedly solve small supervised problems inside each
+update. Understanding losses, optimizers, and overfitting here will make
+the RL lessons much easier to follow.
 
 ### Components of Supervised Learning
 
@@ -68,22 +77,40 @@ L(ŷ, y) = loss(prediction, true_value)
 
 **Common loss functions:**
 
-**Regression (continuous outputs):**
-- **Mean Squared Error (MSE):** L = (ŷ - y)²
-  - Sensitive to outliers
-  - Used for: Value function approximation in RL
+For **regression problems** (where the output is a real number such as a
+value estimate) a very common choice is **Mean Squared Error (MSE)**,
+defined as `L = (ŷ - y)²` for a single prediction. Squaring the error
+means that large mistakes are punished much more heavily than small
+ones, which makes MSE **sensitive to outliers**. Most
+valuefunction approximators in RL (for example Qnetworks in DQN) use
+variants of MSE because it is simple, differentiable everywhere, and
+encourages predictions to match the target closely.
 
-- **Mean Absolute Error (MAE):** L = |ŷ - y|
-  - More robust to outliers
-  - Used for: Robust value estimation
+Another option is **Mean Absolute Error (MAE)**, `L = |ŷ - y|`. Here you
+penalize the absolute size of the error, without squaring it. This makes
+MAE **more robust to outliers**: a few very bad points do not dominate
+the loss as much as they do with MSE. In RL you might use MAE when you
+care about being reasonably accurate across the board and you want to
+reduce the influence of rare, extreme targets.
 
-- **Huber Loss:** Combines MSE (small errors) + MAE (large errors)
-  - Used for: DQN (more stable than MSE)
+**Huber loss** combines the best of both worlds. For small errors it
+behaves like MSE (quadratic), which gives smooth gradients and encourages
+very precise fits. For large errors it switches to MAE (linear), which
+prevents a few huge mistakes from blowing up your gradients. This is why
+Huber loss is commonly used in DQN implementations: it tends to be more
+numerically stable than plain MSE when value targets can occasionally be
+noisy or very large.
 
-**Classification (discrete outputs):**
-- **Cross-Entropy:** L = -Σ y_i log(ŷ_i)
-  - For probability distributions
-  - Used for: Policy networks in RL
+For **classification problems** (where the output is a probability
+distribution over discrete classes) the standard choice is
+**crossentropy loss**. If `y` is a onehot vector indicating the true
+class and `ŷ` is the vector of predicted probabilities, the loss is
+`L = -Σ y_i log(ŷ_i)`: you take the negative logprobability that the
+model assigned to the correct class. This encourages the network to put
+high probability on the right action and low probability on others. In
+RL, crossentropy appears when training **policy networks** in a pure
+supervised way (behavior cloning) or in parts of some policy gradient
+implementations.
 
 #### 3. The Optimizer
 
@@ -101,9 +128,27 @@ Mathematically, a simple gradient descent step looks like:
 ```
 
 **Common optimizers:**
-- **SGD:** θ = θ - α∇L
-- **Momentum:** Adds velocity term for faster convergence
-- **Adam:** Adaptive learning rates per parameter (most popular)
+
+The simplest optimizer is **Stochastic Gradient Descent (SGD)**, which
+updates parameters using `θ ← θ - α ∇L` on each mini‑batch. It follows
+the negative gradient direction with a fixed learning rate `α`. SGD is
+conceptually simple and works surprisingly well, but it can be slow to
+converge in ravine‑shaped loss landscapes.
+
+To speed things up, **Momentum** keeps a running average of recent
+gradients (a "velocity" vector) and updates parameters using that
+averaged direction. This tends to smooth out noisy gradients and helps
+the optimizer build up speed along consistent directions, much like a
+ball rolling down a hill instead of a point sliding and stopping at
+every step.
+
+**Adam** (Adaptive Moment Estimation) goes further by maintaining moving
+averages of both the gradients and their squared values, and it uses
+those to adapt the learning rate **per parameter**. Parameters that see
+consistently large gradients get smaller effective learning rates, while
+those with tiny gradients get larger ones. Because it is relatively
+robust to the initial choice of learning rate and works well on noisy
+problems, Adam is the most common default optimizer in deep RL.
 
 #### 4. Training Loop
 
@@ -122,31 +167,51 @@ for epoch in range(num_epochs):
 
 ### Overfitting and Underfitting
 
-These describe how well a model **generalizes** from training data to new,
-unseen data.
+These concepts describe how well a model **generalizes** from the
+examples it saw during training to new, unseen data.
 
-**Underfitting:** Model too simple, high training error
-- Solution: Bigger model, more features, train longer
+We say a model is **underfitting** when it is too simple to capture the
+true patterns in the data. It performs poorly even on the training set,
+and of course it also does badly on validation data. A linear model
+trying to fit a highly curved relationship is a classic underfitting
+example. To fix underfitting you usually need to **increase model
+capacity** (for example, add layers or units), engineer better features,
+or simply **train longer** so the model has time to learn.
 
-**Overfitting:** Model memorizes training data, poor generalization
-- Solutions:
-  - More training data
-  - Regularization (L2, dropout)
-  - Early stopping
-  - Data augmentation
+In contrast, **overfitting** happens when the model memorizes the
+training examples instead of learning general rules. Training loss
+becomes very small, but validation or test loss starts to increase. The
+model performs great on data it has seen but badly on new data. Common
+ways to combat overfitting are to collect **more diverse training
+data**, add **regularization** (such as L2 weight decay or dropout), use
+**early stopping** based on validation performance, and apply **data
+augmentation** to artificially increase the variety of inputs.
 
-**Bias-Variance Tradeoff:**
-- **High bias:** Underfitting
-- **High variance:** Overfitting
-- **Sweet spot:** Good generalization
+The **biasvariance tradeoff** is a way to understand this balance.
+Models with **high bias** are too rigid; they underfit because they
+cannot represent the true function well. Models with **high variance**
+are very flexible; they can fit almost anything, including noise, which
+leads to overfitting. Good generalization lives somewhere in the middle,
+with just enough capacity to capture meaningful structure without
+chasing every random fluctuation.
 
 ### Train/Validation/Test Split
 
-- **Training set (70-80%):** Used to update model parameters
-- **Validation set (10-15%):** Used to tune hyperparameters, early stopping
-- **Test set (10-15%):** Final evaluation, never used during training
+In practice you rarely train and evaluate on exactly the same data,
+because that would not tell you how well the model will perform on new
+inputs. Instead, you split your dataset into three parts. The
+**training set** (often around 7050% of the data) is used to update the
+model parameters by running the training loop. A separate
+**validation set** (around 1015%) is used to tune hyperparameters, pick
+between different model architectures, and decide when to stop training
+(for example, when validation loss stops improving). Finally, a
+**test set** (another 1015%) is kept completely aside until the end and
+used only once for the final evaluation.
 
-**Critical:** Test set must remain unseen until final evaluation!
+The critical rule is that the **test set must remain unseen** during
+model development. If you peek at test performance while tuning
+hyperparameters, you are effectively training on the test set and your
+reported performance will be overly optimistic.
 
 ### Connection to Reinforcement Learning
 
@@ -170,9 +235,16 @@ loss = MSE(Q(s,a), r + γ * max_a' Q(s',a'))
 loss = CrossEntropy(π(·|s), a*)
 ```
 
-**Actor-Critic methods:**
-- Actor: Policy network (supervised by policy gradient)
-- Critic: Value network (supervised by TD error)
+**ActorCritic methods:**
+
+Many modern RL algorithms combine ideas from policy gradients and value
+functions in an **actorcritic** architecture. The **actor** is a policy
+network that outputs an action distribution given a state; it is updated
+using a policygradient style objective. The **critic** is a value
+network that estimates how good a state (or stateaction pair) is; it is
+trained with a supervised loss based on **TD error**. You can think of
+the critic as learning a supervised regression problem, and then the
+actor uses that learned signal to improve the policy.
 
 ## 💻 Practical Implementation
 

@@ -20,14 +20,17 @@ If you encounter unfamiliar ML, deep learning, or RL terms in this lesson, see t
 
 ### Policy Gradient Methods
 
-In value-based methods (like Q-learning / DQN) we first learn a value function and then
-*derive* a policy from it (e.g., greedy w.r.t. Q). **Policy gradient methods flip this
-around:** we **parameterize the policy directly** and optimize it.
+In value-based methods (like Q-learning or DQN) we first learn a value
+function and then *derive* a policy from it, typically by acting greedily
+with respect to the learned Q-values. **Policy gradient methods flip this
+around.** Instead of learning values first, we **parameterize the policy
+directly** and optimize its parameters.
 
-- We write the policy as \(\pi_\theta(a \mid s)\): a neural network with parameters
-  \(\theta\) that outputs a probability distribution over actions.
-- Our goal is to adjust \(\theta\) so that the policy chooses actions that yield high
-  long-term reward.
+We write the policy as \(\pi_\theta(a \mid s)\). You can think of this as
+a neural network with parameters \(\theta\) that outputs a probability
+distribution over actions given a state. Our goal is to adjust
+\(\theta\) so that the policy chooses actions that yield high long-term
+reward.
 
 Formally we want to maximize the **expected return**
 
@@ -35,18 +38,19 @@ Formally we want to maximize the **expected return**
 J(θ) = 𝔼_π [G_t] = 𝔼_π [ Σ_t γ^t r_t ]
 ```
 
-The **policy gradient theorem** tells us that a valid gradient of this objective is
+The **policy gradient theorem** tells us that a valid gradient of this
+objective is
 
 ```text
 ∇_θ J(θ) = 𝔼_π [ ∇_θ log π_θ(a | s) · Q^π(s, a) ]
 ```
 
-Intuition:
-
-- `log π_θ(a | s)` tells us *how much more* or *less* likely the policy makes action `a`.
-- If an action leads to **higher-than-average return** in that state, we want to
-  **increase** its probability.
-- If it leads to poor returns, we want to **decrease** its probability.
+To build intuition, notice that `log π_θ(a | s)` tells us how much more
+or less likely the policy makes action `a` in state `s`. If an action
+tends to lead to **higher-than-average returns** in that state, we want
+to **increase** its probability. If it tends to lead to poor returns, we
+want to **decrease** its probability. The policy gradient formula is a
+precise way to implement this idea.
 
 So the update
 
@@ -71,32 +75,28 @@ Algorithm sketch:
        θ ← θ + α · ∇_θ log π_θ(a_t | s_t) · G_t
 ```
 
-A useful mental model:
+A useful mental model is that if the episode return from step `t`
+onward is **high**, we increase the probability of the actions that were
+taken at and after `t`. If the return is **low**, we decrease their
+probability. Over many episodes this gradually shapes the policy toward
+actions that lead to good outcomes.
 
-- If the episode return from step `t` onward is **high**, we increase the probability
-  of the actions that were taken.
-- If the return is **low**, we decrease their probability.
-
-Pros:
-
-- Conceptually simple
-- Works with **discrete or continuous** actions
-
-Cons:
-
-- High variance: each update depends on a full episode return
-- Cannot update until the episode finishes
-
-This motivates adding a **baseline** to reduce variance.
+REINFORCE has some clear advantages. It is conceptually simple and works
+with both **discrete and continuous** action spaces. However, it also has
+downsides. The variance of its gradient estimates is high because each
+update depends on a full episode return, and we cannot update until the
+episode finishes. These issues motivate adding a **baseline** (or
+critic) to reduce variance, which leads us to actor–critic methods.
 
 ### Actor–Critic Methods
 
-REINFORCE uses the raw return `G_t` as the "how good" signal, which is noisy.
-Actor–critic methods introduce a separate **critic** to estimate value functions and
-produce lower-variance signals.
+REINFORCE uses the raw return `G_t` as the "how good" signal, which is
+noisy. Actor–critic methods introduce a separate **critic** network to
+estimate value functions and produce lower-variance learning signals.
 
-- **Actor:** policy network \(\pi_\theta(a \mid s)\)
-- **Critic:** value network \(V_\phi(s)\) estimating expected return from state `s`
+The **actor** is the policy network \(\pi_\theta(a \mid s)\) that outputs
+action probabilities. The **critic** is a value network \(V_\phi(s)\) that
+estimates the expected return starting from state `s`.
 
 We use TD learning for the critic and use its **TD error** as a better signal for the
 actor:
@@ -122,39 +122,41 @@ the **advantage function**:
 A(s, a) = Q(s, a) − V(s)
 ```
 
-Interpretation:
+Interpreting this, `V(s)` is the average value of being in state `s`,
+while `Q(s, a)` is the value when we specifically take action `a`.
+Therefore `A(s, a)` measures **how much better or worse** action `a` is
+relative to the average action in that state.
 
-- `V(s)` is the average value of being in state `s`
-- `Q(s, a)` is the value when we specifically take action `a`
-- `A(s, a)` measures **how much better or worse** action `a` is relative to the
-  average action in that state.
-
-Advantages of using `A(s, a)` in the policy gradient:
-
-- Centered around zero 	→ updates are more balanced
-- Lower variance than using raw returns
-- If all actions are equally good, advantages are ~0 and the policy barely changes
+Using `A(s, a)` in the policy gradient has several benefits. Because
+advantages are roughly **centered around zero**, the updates are more
+balanced: actions that are better than average are increased, and those
+that are worse than average are decreased. This tends to give **lower
+variance** than using raw returns. And if all actions are equally good,
+the advantages are near zero and the policy changes very little, which is
+exactly what we want.
 
 In practice we approximate `A(s, a)` using combinations of TD errors and returns (e.g.,
 Generalized Advantage Estimation, which you can explore as an extension).
 
 ### PPO (Proximal Policy Optimization)
 
-Vanilla actor–critic still suffers from a key problem: if we take **too large a gradient
-step**, the policy may change so much that performance collapses (we move into a bad
-region of parameter space).
+Vanilla actor–critic still suffers from a key problem: if we take
+**too large a gradient step**, the policy may change so much that
+performance collapses because we move into a bad region of parameter
+space.
 
-PPO is a **trust-region-inspired** method that tries to keep each policy update
-"close" to the old policy, while still improving performance.
+PPO is a **trust‑region‑inspired** method that tries to keep each policy
+update "close" to the old policy, while still improving performance.
 
-- Let `π_θ_old` be the policy before an update and `π_θ` the new policy.
-- Define the **probability ratio**
+Suppose `π_θ_old` is the policy before an update and `π_θ` is the
+candidate new policy. PPO defines the **probability ratio**
 
-  ```text
-  r_t(θ) = π_θ(a_t | s_t) / π_θ_old(a_t | s_t)
-  ```
+```text
+r_t(θ) = π_θ(a_t | s_t) / π_θ_old(a_t | s_t)
+```
 
-- If `r_t(θ) > 1`, the new policy makes `a_t` more likely; if `< 1`, less likely.
+If `r_t(θ) > 1`, the new policy makes action `a_t` more likely than
+before; if `r_t(θ) < 1`, it makes that action less likely.
 
 The PPO **clipped objective** is
 
@@ -163,18 +165,17 @@ L^CLIP(θ) = 𝔼_t [ min( r_t(θ) · A_t,
                        clip(r_t(θ), 1 − ε, 1 + ε) · A_t ) ]
 ```
 
-Effect:
+The **effect** of this objective is that when the policy change is
+**small** (the ratio is near 1), the objective behaves like a standard
+policy gradient using advantages. But when the change would make `r_t`
+leave the interval `[1−ε, 1+ε]`, we **clip** it so that the improvement is
+limited. This prevents extremely large, potentially destructive updates.
 
-- When the policy change is **small** (ratio near 1), the objective behaves like a
-  standard policy gradient.
-- When the change would make `r_t` go outside `[1−ε, 1+ε]`, we **clip** it so that the
-  improvement is limited. This prevents enormous destructive updates.
-
-Empirically, PPO is:
-
-- Much more **stable** than vanilla policy gradient
-- Easier to implement than TRPO (no second‑order optimization)
-- A very strong default for many continuous control and game tasks
+Empirically, PPO tends to be much more **stable** than vanilla policy
+gradient methods, while still being relatively easy to implement (unlike
+TRPO, it does not require expensive second‑order optimization). As a
+result, PPO has become a very strong default choice for many continuous
+control and game‑playing tasks.
 
 ## 💻 Practical Implementation
 
