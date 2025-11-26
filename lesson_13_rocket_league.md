@@ -1,0 +1,554 @@
+# Lesson 13: Scaling to Rocket League - Building Complex Game AI
+
+**Duration:** 8-12 hours
+
+**Prerequisites:** Lessons 1-12
+
+## 🎯 Learning Objectives
+
+1. Understand Rocket League as an RL problem
+2. Set up RLGym environment
+3. Design state and action spaces for car soccer
+4. Implement reward functions for complex behaviors
+5. Train agents with self-play and opponent bots
+6. Scale training with parallel environments
+7. Deploy and compete in RLBot tournaments
+
+## 📖 Theory
+
+### Rocket League RL Challenges
+
+**Complexity factors:**
+- **High-dimensional state:** Car physics (position, velocity, rotation, boost)
+- **Continuous actions:** Throttle, steering, pitch, yaw, roll, jump, boost
+- **Long time horizons:** Games last 5 minutes
+- **Multi-agent:** 1v1, 2v2, 3v3
+- **Complex physics:** Ball bounces, aerial mechanics, demolitions
+- **Sparse rewards:** Goals are infrequent
+
+### RLGym Environment
+
+**State observations:**
+```python
+{
+    'player': [pos_x, pos_y, pos_z, vel_x, vel_y, vel_z,
+               pitch, yaw, roll, boost_amount, ...],
+    'ball': [pos_x, pos_y, pos_z, vel_x, vel_y, vel_z],
+    'teammates': [...],
+    'opponents': [...]
+}
+```
+
+**Action space (8 controls):**
+- Throttle: [-1, 1]
+- Steer: [-1, 1]
+- Pitch: [-1, 1]
+- Yaw: [-1, 1]
+- Roll: [-1, 1]
+- Jump: {0, 1}
+- Boost: {0, 1}
+- Handbrake: {0, 1}
+
+### Reward Function Design
+
+**Multi-component rewards:**
+
+```python
+reward = (
+    1000 * goal_scored
+    + 100 * ball_touch
+    + 10 * velocity_toward_ball
+    + 5 * velocity_toward_goal
+    + 1 * boost_pickup
+    - 50 * demo_opponent
+)
+```
+
+**Curriculum rewards:**
+- Stage 1: Touch ball
+- Stage 2: Hit ball toward goal
+- Stage 3: Score goals
+- Stage 4: Team coordination
+
+### Training Strategies
+
+**1. Self-Play:**
+- Train against copies of itself
+- Automatically adjusting difficulty
+- Discovers meta-strategies
+
+**2. Bot Diversity:**
+- Mix of:
+  - Rookie bots (easy)
+  - All-Star bots (hard)
+  - Past agent versions
+  - Human replays
+
+**3. Parallel Training:**
+- 8-32 simultaneous game instances
+- Distributed across GPUs
+- Faster iteration
+
+## 💻 Practical Implementation
+
+### Setup
+
+```bash
+pip install rlgym rlgym-tools rocket-learn
+```
+
+### 1. Basic RLGym Environment
+
+```python
+import rlgym
+from rlgym.utils.obs_builders import AdvancedObs
+from rlgym.utils.reward_functions import CombinedReward
+from rlgym.utils.terminal_conditions import TimeoutCondition
+from rlgym.utils.state_setters import DefaultState
+
+# Create environment
+env = rlgym.make(
+    game_speed=100,  # Speed up for training
+    spawn_opponents=True,
+    team_size=1,  # 1v1
+    obs_builder=AdvancedObs(),
+    reward_fn=CombinedReward(
+        (VelocityReward(), 0.1),
+        (EventReward(goal=1.0, touch=0.1), 1.0)
+    ),
+    terminal_conditions=[TimeoutCondition(300)],  # 5 minutes
+    state_setter=DefaultState()
+)
+
+# Check spaces
+print(f"Observation space: {env.observation_space.shape}")
+print(f"Action space: {env.action_space.shape}")
+```
+
+### 2. Custom Reward Function
+
+```python
+from rlgym.utils.reward_functions import RewardFunction
+import numpy as np
+
+class RocketLeagueReward(RewardFunction):
+    def __init__(self):
+        self.last_ball_touch = {}
+
+    def reset(self, initial_state):
+        self.last_ball_touch = {}
+
+    def get_reward(self, player, state, previous_action):
+        reward = 0.0
+
+        # Ball touch reward
+        if player.ball_touched:
+            reward += 1.0
+            self.last_ball_touch[player.car_id] = state.ball.position
+
+        # Goal reward
+        if state.last_touch == player.car_id:
+            if state.blue_score > 0:  # Scored
+                reward += 100.0
+
+        # Velocity toward ball
+        ball_dir = state.ball.position - player.car_data.position
+        ball_dir = ball_dir / (np.linalg.norm(ball_dir) + 1e-8)
+        velocity_toward = np.dot(player.car_data.linear_velocity, ball_dir)
+        reward += 0.01 * velocity_toward
+
+        # Boost management
+        if player.boost_amount > 50:
+            reward += 0.001
+
+        return reward
+
+# Use custom reward
+env = rlgym.make(reward_fn=RocketLeagueReward())
+```
+
+### 3. State Encoder
+
+```python
+class StateEncoder:
+    """Encode RLGym state for neural network input."""
+
+    def encode(self, obs):
+        """
+        Convert RLGym observation to normalized feature vector.
+        """
+        # Normalize positions (divide by field dimensions)
+        positions = obs[:6] / np.array([4096, 5120, 2044, 4096, 5120, 2044])
+
+        # Normalize velocities
+        velocities = obs[6:12] / 2300  # Max car velocity
+
+        # Rotation (already in [-1, 1])
+        rotation = obs[12:18]
+
+        # Boost (already in [0, 1])
+        boost = obs[18:19]
+
+        # Ball state
+        ball_state = obs[19:31]
+        ball_positions = ball_state[:3] / np.array([4096, 5120, 2044])
+        ball_velocities = ball_state[3:] / 6000  # Max ball velocity
+
+        return np.concatenate([
+            positions, velocities, rotation, boost,
+            ball_positions, ball_velocities
+        ])
+```
+
+### 4. Training with PPO
+
+```python
+from stable_baselines3 import PPO
+from stable_baselines3.common.vec_env import SubprocVecEnv
+import rlgym
+
+def make_env():
+    def _init():
+        return rlgym.make(
+            game_speed=100,
+            reward_fn=RocketLeagueReward(),
+            spawn_opponents=True
+        )
+    return _init
+
+# Create parallel environments
+num_envs = 8
+env = SubprocVecEnv([make_env() for _ in range(num_envs)])
+
+# Train with PPO
+model = PPO(
+    "MlpPolicy",
+    env,
+    learning_rate=3e-4,
+    n_steps=2048,
+    batch_size=256,
+    n_epochs=10,
+    gamma=0.99,
+    gae_lambda=0.95,
+    clip_range=0.2,
+    ent_coef=0.01,
+    verbose=1,
+    tensorboard_log="./tensorboard/"
+)
+
+# Train
+model.learn(total_timesteps=10_000_000)
+model.save("rocket_league_agent")
+```
+
+### 5. Self-Play Training
+
+```python
+class SelfPlayCallback:
+    """Periodically update opponent with current policy."""
+
+    def __init__(self, update_freq=10000):
+        self.update_freq = update_freq
+        self.opponent_policy = None
+
+    def __call__(self, locals_, globals_):
+        if locals_['self'].num_timesteps % self.update_freq == 0:
+            # Save current policy as opponent
+            self.opponent_policy = locals_['self'].policy.state_dict()
+            print("Updated opponent policy")
+        return True
+
+# Use in training
+model.learn(
+    total_timesteps=10_000_000,
+    callback=SelfPlayCallback()
+)
+```
+
+### 6. Evaluation and Deployment
+
+```python
+def evaluate_agent(model, num_games=10):
+    """Evaluate agent against bots."""
+    env = rlgym.make(
+        game_speed=1,  # Real-time
+        spawn_opponents=True
+    )
+
+    wins = 0
+    total_goals = 0
+
+    for game in range(num_games):
+        obs = env.reset()
+        done = False
+        episode_goals = 0
+
+        while not done:
+            action, _ = model.predict(obs, deterministic=True)
+            obs, reward, done, info = env.step(action)
+
+            # Track goals
+            if info.get('blue_score', 0) > episode_goals:
+                episode_goals = info['blue_score']
+                total_goals += 1
+
+        # Check win
+        if info['blue_score'] > info['orange_score']:
+            wins += 1
+
+    print(f"Win rate: {wins/num_games:.2%}")
+    print(f"Avg goals per game: {total_goals/num_games:.2f}")
+
+# Evaluate
+model = PPO.load("rocket_league_agent")
+evaluate_agent(model)
+```
+
+## 📚 Key References
+
+### RLGym Resources
+- [RLGym Documentation](https://rlgym.github.io/) - Complete API reference
+- [RLGym GitHub](https://github.com/lucas-emery/rocket-league-gym) - Source code and examples
+- [Rocket-Learn](https://github.com/Rolv-Arild/rocket-learn) - Distributed training framework
+- [RLGym-Tools](https://github.com/AechPro/rlgym-tools) - Additional utilities
+
+### Community & Competitions
+- [RLGym Discord](https://discord.gg/rlgym) - Active community, get help here!
+- [RLBot](https://rlbot.org/) - Bot framework and competitions
+- [RLBot Discord](https://discord.gg/rlbot) - Bot development community
+- [Rocket League Replays](https://ballchasing.com/) - Download replays for imitation learning
+
+### Tutorials & Blogs
+- [RLGym Getting Started Guide](https://rlgym.github.io/getting_started.html) - Official tutorial
+- [Necto Bot Case Study](https://github.com/Rolv-Arild/Necto) - SSL-level bot, open source
+- [RLBot Python Tutorial](https://www.youtube.com/watch?v=DwBB7871rX0) - Beginner-friendly video
+
+### Papers (Complex Game AI)
+- **Berner et al. (2019)** - "Dota 2 with Large Scale Deep RL" - [arXiv](https://arxiv.org/abs/1912.06680)
+  - Similar complexity, multi-agent, long time horizons
+- **Jaderberg et al. (2019)** - "Human-level performance in 3D multiplayer games (Quake III)" - [arXiv](https://arxiv.org/abs/1807.01281)
+  - FPS game, continuous control, self-play
+- **Vinyals et al. (2019)** - "Grandmaster level in StarCraft II (AlphaStar)" - [Nature](https://www.nature.com/articles/s41586-019-1724-z)
+  - Multi-agent, curriculum, league training
+
+### Video Resources
+- [RLGym YouTube Channel](https://www.youtube.com/@RLGym) - Official tutorials and showcases
+- [RLBot Setup Guide](https://www.youtube.com/watch?v=YJ69QZ-EX7k) - Installation walkthrough
+- [Rocket League Bot Showcase](https://www.youtube.com/results?search_query=rlbot+showcase) - See what's possible!
+
+## 🏋️ Exercises
+
+### Exercise 1: Basic Agent (Easy)
+Train an agent that can hit the ball consistently in 1v0 mode.
+
+**Success criteria:**
+- Touches ball >5 times per game
+- Stays on correct side of field
+
+### Exercise 2: Aerial Mechanics (Medium)
+Implement reward shaping for aerial hits.
+
+```python
+class AerialReward(RewardFunction):
+    def get_reward(self, player, state, previous_action):
+        # Reward being in air near ball
+        # Reward aerial ball touches
+        # Your implementation
+        pass
+```
+
+### Exercise 3: Team Play (Hard)
+Train 2v2 agents with passing behaviors.
+
+**Challenges:**
+- Credit assignment (who caused goal?)
+- Coordination (don't both go for ball)
+- Communication (centralized critic?)
+
+### Exercise 4: Advanced Mechanics (Hard)
+Implement curriculum learning for:
+1. Ground hits
+2. Wall hits
+3. Simple aerials
+4. Advanced aerials (air roll shots)
+
+### Exercise 5: RLBot Competition (Very Hard)
+**Final Project:** Enter RLBot tournament
+
+**Requirements:**
+1. Train agent to beat All-Star bot consistently
+2. Implement real-time inference (<16ms per action)
+3. Handle match state management
+4. Create match recording/replay system
+5. Write strategy documentation
+
+**Bonus:**
+- Multi-modal learning (vision + state)
+- Opponent modeling
+- In-game adaptation
+
+## 🔧 Troubleshooting Tips
+
+### Common Issues
+
+**1. Training is unstable**
+- Normalize all inputs
+- Use reward normalization
+- Reduce learning rate
+- Increase batch size
+
+**2. Agent doesn't learn basic mechanics**
+- Simplify reward function
+- Use curriculum learning
+- Check action space scaling
+- Verify observation encoding
+
+**3. Slow training**
+- Increase game_speed (100x)
+- Use more parallel environments
+- Enable GPU acceleration
+- Reduce observation complexity
+
+**4. Agent gets stuck in local optimum**
+- Increase exploration (entropy coefficient)
+- Use self-play with diverse opponents
+- Implement curiosity-driven exploration
+- Reset to earlier checkpoints
+
+### Performance Optimization
+
+```python
+# Multi-GPU training
+from stable_baselines3.common.vec_env import VecNormalize
+
+env = SubprocVecEnv([make_env() for _ in range(32)])
+env = VecNormalize(env, norm_obs=True, norm_reward=True)
+
+# Use larger networks for complex tasks
+policy_kwargs = dict(
+    net_arch=[dict(pi=[512, 512, 512], vf=[512, 512, 512])]
+)
+
+model = PPO(
+    "MlpPolicy",
+    env,
+    policy_kwargs=policy_kwargs,
+    device="cuda"
+)
+```
+
+## ✅ Self-Check
+
+Before considering yourself ready for RL game AI:
+
+- [ ] Can train agent that beats rookie bots consistently
+- [ ] Understand reward shaping trade-offs for Rocket League
+- [ ] Can implement custom observation builders and reward functions
+- [ ] Know how to use parallel training (8+ environments)
+- [ ] Can debug training issues systematically (instability, no learning)
+- [ ] Understand self-play dynamics and opponent pool management
+- [ ] Can deploy trained models in real-time (<16ms inference)
+- [ ] Have trained an agent that can hit the ball consistently
+
+## 🎓 Capstone Project Rubric
+
+### Minimum Requirements (Pass)
+- [ ] Agent can hit stationary ball >50% of attempts
+- [ ] Training pipeline with logging (TensorBoard)
+- [ ] Custom reward function implemented
+- [ ] Parallel training (at least 4 environments)
+- [ ] Evaluation script with metrics (goals, touches, win rate)
+- [ ] Documentation (README with setup and training instructions)
+
+### Target Performance (Good)
+- [ ] Agent beats Rookie bots >70% of games
+- [ ] Can hit moving ball consistently
+- [ ] Self-play training implemented
+- [ ] Curriculum learning (stationary → moving ball)
+- [ ] Hyperparameter tuning documented
+- [ ] Demo video showing learned behaviors
+
+### Stretch Goals (Excellent)
+- [ ] Agent beats All-Star bots >50% of games
+- [ ] Can perform basic aerials
+- [ ] Multi-agent training (2v2 or 3v3)
+- [ ] Opponent modeling or adaptation
+- [ ] Real-time deployment in RLBot framework
+- [ ] Detailed analysis of learned strategies
+
+### Expected Training Time & Resources
+- **Hardware:** GPU recommended (RTX 3060 or better), 16GB+ RAM
+- **Training time:**
+  - Basic ball hitting: 2-4 hours (1-2M steps)
+  - Beat Rookie bots: 8-12 hours (5-10M steps)
+  - Beat All-Star bots: 24-48 hours (20-50M steps)
+- **Parallel environments:** 8-16 for good speed/stability trade-off
+- **Game speed:** 100x for training (real-time for evaluation)
+
+## 🚀 Next Steps
+
+**Congratulations!** You've completed the RL workshop from basics to Rocket League!
+
+### Continue Learning:
+
+**1. Advanced RL Topics:**
+- **Multi-agent RL:** QMIX, MADDPG, MAPPO for team coordination
+- **Model-based RL:** World Models, MuZero, Dreamer for sample efficiency
+- **Meta-learning:** Learn to adapt quickly to new opponents/tasks
+- **Sim-to-real transfer:** Apply RL to real robots (if you have access)
+
+**2. Related Fields:**
+- **Imitation learning:** Behavior cloning from human replays, inverse RL
+- **Offline RL:** Learn from datasets (ballchasing.com replays!)
+- **Hierarchical RL:** Skills and options for complex behaviors
+- **Transformer-based RL:** Decision Transformer, Trajectory Transformer
+
+**3. Competitions & Community:**
+- [RLBot Tournaments](https://rlbot.org/) - Compete with your bot!
+- [MineRL Competition](https://minerl.io/) - Minecraft RL challenge
+- [AI Crowd Challenges](https://www.aicrowd.com/) - Various RL competitions
+- [Kaggle RL Competitions](https://www.kaggle.com/competitions?search=reinforcement) - Data science + RL
+
+**4. Research & Open Source:**
+- Read recent papers from **NeurIPS, ICML, ICLR** (RL track)
+- Implement algorithms from [Spinning Up](https://spinningup.openai.com/)
+- Contribute to [Stable-Baselines3](https://github.com/DLR-RM/stable-baselines3), [CleanRL](https://github.com/vwxyzjn/cleanrl), or [RLGym](https://github.com/lucas-emery/rocket-league-gym)
+- Share your Rocket League bot on RLBot Discord!
+
+### Your RL Journey
+
+You now have the skills to:
+- ✅ Implement RL algorithms from scratch (Q-learning, DQN, PPO)
+- ✅ Train agents for complex environments (Atari, MuJoCo, Rocket League)
+- ✅ Debug and optimize training (hyperparameters, reward shaping, curriculum)
+- ✅ Build complete RL pipelines (preprocessing, logging, evaluation, deployment)
+- ✅ Apply RL to real-world problems (game AI, robotics, control)
+
+### Recommended Next Projects
+
+1. **Improve your Rocket League bot:**
+   - Add aerial mechanics with curriculum learning
+   - Implement team play (2v2, 3v3)
+   - Use imitation learning from pro replays
+   - Enter an RLBot tournament!
+
+2. **Apply RL to a new domain:**
+   - Train a trading bot (stock market, crypto)
+   - Build a recommendation system with RL
+   - Solve a robotics task (if you have access)
+   - Create a custom game and train an agent
+
+3. **Contribute to research:**
+   - Reproduce a recent paper
+   - Improve an existing algorithm
+   - Publish your findings (blog, paper, GitHub)
+
+**Keep experimenting, keep learning, and most importantly—have fun building AI agents!**
+
+---
+
+**Estimated completion time:** 8-12 hours (basic agent) to 40+ hours (competitive bot)
+
+**Workshop complete!** 🎉 Return to [README](README.md) for more resources.
+
+**Share your results:** Post your trained Rocket League bot on the RLGym/RLBot Discord and show what you've learned!
