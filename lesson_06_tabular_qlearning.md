@@ -85,6 +85,10 @@ We **did not** need to know the transition probabilities; we just used the exper
 Temporal Difference learning is the more general idea underlying Q-learning.
 Instead of waiting until the end of an episode to see the full return, we **bootstrap**:
 
+> **Bootstrapping** here means we use our **current value estimate** (e.g.,
+> `V(s')` or `Q(s', a')`) inside the target, instead of waiting to compute the
+> full return `G_t` from actual future rewards.
+
 - **Monte Carlo:**
   - Wait until the episode finishes
   - Compute the *actual* return \(G_t\) and update using that

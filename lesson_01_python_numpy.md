@@ -44,6 +44,10 @@ numpy_array = np.array([1, 2, 3, 4, 5])
 
 #### 2. Vectorization
 
+Vectorization means writing operations on **whole arrays at once** instead of
+explicit Python `for` loops. NumPy then performs the loop internally in fast
+compiled code (C), so the same math runs much faster and uses your CPU better.
+
 Instead of looping over elements:
 
 ```python
@@ -58,6 +62,10 @@ result = x ** 2  # 10-100x faster!
 ```
 
 #### 3. Broadcasting
+
+Broadcasting is NumPy’s rule for automatically **stretching smaller arrays**
+so that element‑wise operations like `+` or `*` still make sense when shapes
+are different but compatible.
 
 NumPy automatically expands arrays to compatible shapes:
 

@@ -22,7 +22,17 @@ If you encounter unfamiliar ML, deep learning, or RL terms in this lesson, see t
 
 ### Convolutional Neural Networks (CNNs)
 
-CNNs are specialized for processing grid-like data (images):
+CNNs are specialized for processing grid-like data (images).
+
+The core idea of a **convolution** is:
+
+- Take a small **filter / kernel** (e.g., a 3×3 grid of weights).
+- Slide it over the image.
+- At each position, compute a **weighted sum** of the pixels under the filter.
+
+The same filter is reused across the whole image, so the network can detect the
+same pattern (edge, corner, texture) anywhere. Stacking multiple convolutional
+layers lets the network build up from simple edges to more complex shapes.
 
 **Key components:**
 
@@ -31,9 +41,10 @@ CNNs are specialized for processing grid-like data (images):
    - Mid-level: shapes, patterns
    - High-level: object parts
 
-2. **Pooling Layers:** Downsample spatial dimensions
-   - Max pooling: Take maximum in region
-   - Average pooling: Take average in region
+2. **Pooling Layers:** Downsample spatial dimensions to make representations
+   smaller and more robust to small shifts in the input.
+   - Max pooling: Take maximum value in each small window (keeps strongest signal).
+   - Average pooling: Take average in region (smooths things out).
 
 3. **Fully Connected Layers:** Final classification
 
@@ -55,12 +66,21 @@ CNNs are specialized for processing grid-like data (images):
 
 ### Batch Normalization
 
-Normalizes activations within mini-batches:
+During training, the distribution of layer activations can drift as earlier
+layers change, which can slow or destabilize learning. **Batch normalization**
+normalizes each layer’s activations within a mini-batch to have roughly zero
+mean and unit variance, then learns a scale and shift for each feature.
+
+This normalization of activations within mini-batches:
 - Faster training
 - Higher learning rates possible
 - Acts as regularization
 
 ### Data Augmentation
+
+Instead of collecting more real images, we can synthetically **augment** the
+dataset by applying random transformations so the model sees slightly different
+versions of each example on every epoch.
 
 Create variations of training data:
 - Rotation, translation, scaling

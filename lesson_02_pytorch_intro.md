@@ -23,7 +23,7 @@ If you encounter unfamiliar ML, deep learning, or RL terms in this lesson, see t
 
 PyTorch is a deep learning framework that provides:
 
-1. **Tensors:** Like NumPy arrays but with GPU support and autodiff
+1. **Tensors:** Multi-dimensional arrays (scalars, vectors, matrices, higher‑dimensional grids) that can live on CPU or GPU and optionally track gradients
 2. **Autograd:** Automatic differentiation for backpropagation
 3. **Neural Network Building Blocks:** Pre-built layers, optimizers, loss functions
 4. **Dynamic Computation Graphs:** Build and modify networks on-the-fly
@@ -39,14 +39,34 @@ PyTorch is a deep learning framework that provides:
 
 #### 1. Tensors vs NumPy Arrays
 
+Before we touch any code, let’s be explicit about **what a tensor is**.
+
+- A **scalar** is a single number (e.g., `3.14`) → 0‑dimensional tensor, shape `()`.
+- A **vector** is a 1D list of numbers (e.g., `[1, 2, 3]`) → 1D tensor, shape `(3,)`.
+- A **matrix** is a 2D grid of numbers (rows × columns) → 2D tensor, shape `(rows, cols)`.
+- A **tensor** is the general word for an array of numbers with **any number of dimensions**:
+  - 3D: stack of matrices (e.g., RGB image: height × width × channels)
+  - 4D: batch of images (batch × height × width × channels)
+
+So in practice, a **PyTorch tensor** is just “a multi‑dimensional array of one data type” that
+PyTorch knows how to move to GPU and differentiate through.
+
+In RL terms:
+
+- A single CartPole state like `[position, velocity, angle, angular_velocity]`
+  is a 1D tensor of shape `(4,)`.
+- A batch of 32 such states is a 2D tensor of shape `(32, 4)`.
+
+Here is how tensors relate to NumPy arrays:
+
 ```python
 import numpy as np
 import torch
 
-# NumPy array
+# NumPy array (CPU only, no gradients)
 np_array = np.array([1, 2, 3])
 
-# PyTorch tensor
+# PyTorch tensor (can live on CPU or GPU, can track gradients)
 torch_tensor = torch.tensor([1, 2, 3])
 
 # Easy conversion
@@ -55,11 +75,21 @@ numpy_from_tensor = torch_tensor.numpy()
 ```
 
 **Key differences:**
-- Tensors can run on GPU
-- Tensors track gradients for backpropagation
-- Tensors integrate seamlessly with PyTorch's neural network modules
+- Tensors can run on GPU (`tensor.to('cuda')`).
+- Tensors can track gradients for backpropagation (`requires_grad=True`).
+- Tensors integrate seamlessly with PyTorch's neural network modules.
 
 #### 2. Automatic Differentiation (Autograd)
+
+In training we want to know **how the loss changes when we nudge the
+parameters**. The vector of these partial derivatives is the **gradient**.
+Gradient descent updates parameters by moving them a small step *against* this
+gradient to reduce the loss.
+
+Computing these derivatives by hand for a deep network would be painful.
+**Automatic differentiation (autograd)** means PyTorch applies the chain rule
+for you along the computation graph and gives you exact gradients for every
+tensor that has `requires_grad=True`.
 
 PyTorch automatically computes gradients using the chain rule:
 
@@ -77,6 +107,15 @@ print(x.grad)  # Gradient: dy/dx = 2x = 4
 - Actor-critic methods need both!
 
 #### 3. Computation Graphs
+
+When you run code like `y = model(x)`, PyTorch quietly records **which
+operations produced which tensors**. This record is the **computation graph**:
+nodes are tensors, edges are operations connecting them.
+
+When you later call `y.backward()`, PyTorch walks this graph **from outputs
+back to inputs**, applying the chain rule at each step to accumulate
+gradients for all parameters that require them. The graph is rebuilt every
+forward pass, so you can use normal Python control flow (loops, `if`/`else`).
 
 PyTorch builds a directed acyclic graph (DAG) of operations:
 

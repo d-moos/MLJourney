@@ -49,9 +49,23 @@ You can think of the network as learning a **compressed representation** of the 
 Deep Q-learning is powerful but unstable. Three ingredients are especially dangerous
 when combined (Sutton & Barto call this the **deadly triad**):
 
-1. **Function approximation**  (neural network instead of table)
+1. **Function approximation**   (neural network instead of table)
 2. **Bootstrapping**            (targets depend on current value estimates)
-3. **Off-policy learning**      (learning about a greedy policy while behaving b5-greedy)
+3. **Off-policy learning**      (learning about a greedy policy while behaving
+	                                 epsilon-greedy)
+
+More concretely:
+
+- **Function approximation:** we no longer have exact Q-values in a small
+  table; instead a neural network approximates `Q(s, a)` and must
+  generalize from limited data. This introduces approximation error.
+- **Bootstrapping:** targets include our **own current estimates**
+	  (e.g., `r + gamma * max_a' Q(s', a')`) rather than only true returns. Errors can
+  therefore feed back into future targets.
+- **Off-policy learning:** we learn about the **greedy policy** (what we
+  would do with no exploration) while collecting data under a **different
+	  behavior policy** (epsilon-greedy). This mismatch can make learning less stable
+  if not handled carefully.
 
 Plain "deep Q-learning" (no tricks) tends to **diverge**: Q-values explode, loss becomes
 NaN, and performance collapses. DQN introduces two key stabilizing tricks that directly

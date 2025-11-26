@@ -56,7 +56,11 @@ A parameterized function (e.g., neural network) that makes predictions:
 
 #### 2. The Loss Function L
 
-Measures how wrong predictions are:
+The **loss** is a single number that summarizes **how wrong the model’s
+predictions are** on a batch of data. Training means adjusting parameters
+so that this loss becomes as small as possible on average.
+
+More formally, the loss function measures how wrong predictions are:
 
 ```python
 L(ŷ, y) = loss(prediction, true_value)
@@ -83,7 +87,14 @@ L(ŷ, y) = loss(prediction, true_value)
 
 #### 3. The Optimizer
 
-Algorithm for updating parameters to minimize loss:
+An **optimizer** is the algorithm that looks at the current gradient and
+decides **how to move the parameters** to reduce the loss.
+
+- The gradient `∇_θ L` points in the direction of **steepest increase** of loss.
+- Gradient descent takes a small step in the *opposite* direction to make loss smaller.
+- The **learning rate** controls how big that step is.
+
+Mathematically, a simple gradient descent step looks like:
 
 ```python
 θ_new = θ_old - learning_rate * ∇_θ L
@@ -110,6 +121,9 @@ for epoch in range(num_epochs):
 ```
 
 ### Overfitting and Underfitting
+
+These describe how well a model **generalizes** from training data to new,
+unseen data.
 
 **Underfitting:** Model too simple, high training error
 - Solution: Bigger model, more features, train longer
