@@ -1,181 +1,162 @@
-# Reinforcement Learning Workshop: From Basics to Rocket League Bots
+# Comprehensive Learning Curriculum: Machine Learning & Binary Reverse Engineering
 
-A comprehensive, hands-on curriculum for learning to build RL agents from the ground up.
+Welcome to a comprehensive, hands-on curriculum covering two critical areas of modern software development: **Machine Learning** and **Binary Reverse Engineering**. This project provides complete, production-ready courses designed for experienced software engineers who want to master these disciplines.
+
+---
 
 ## 📚 Course Overview
 
-This workshop takes you from Python fundamentals through advanced reinforcement learning, culminating in building AI agents for complex 3D environments like Rocket League. Each lesson includes theory, practical code, exercises, and references to deepen your understanding.
+This repository contains **two independent, comprehensive courses** that can be taken separately or together:
 
-**Prerequisites:** Basic programming knowledge (variables, loops, functions)
+### 🤖 [Machine Learning: Reinforcement Learning Workshop](ml/README.md)
 
-**Total Time Investment:** 60-80 hours over 8-12 weeks
+**Focus:** Building AI agents from fundamentals to complex game environments
 
-**Tools You'll Need:**
+- **13 lessons** covering Python, PyTorch, supervised learning, and reinforcement learning
+- **Progressive path:** From NumPy basics → PyTorch → RL theory → DQN → Policy Gradients → Rocket League bots
+- **Duration:** 60-80 hours over 8-12 weeks
+- **Audience:** Developers with basic programming knowledge
+- **Capstone:** Build AI agents for complex 3D environments
+
+**What you'll learn:**
+- Deep learning fundamentals with PyTorch
+- Reinforcement learning theory (MDPs, Q-learning, DQN, PPO)
+- Game AI and continuous control
+- Multi-agent systems and advanced RL techniques
+
+---
+
+### 🔍 [Binary Reverse Engineering: Windows Edition](reverse-engineering/README.md)
+
+**Focus:** Professional-level binary analysis, unpacking, and deobfuscation
+
+- **24 lessons** organized in **3 experience-based courses** (Beginner, Intermediate, Advanced)
+- **Progressive mastery:** From PE format basics → dynamic analysis → unpacking → commercial protectors → professional reversing
+- **Duration:** 30-45 hours total (10-15 hours per level)
+- **Audience:** Senior software engineers comfortable with systems programming
+- **Capstone:** Unpack and analyze professionally protected binaries
+
+**What you'll learn:**
+- PE file format and Windows binary structure
+- Static analysis with Binary Ninja
+- Dynamic analysis with x64dbg
+- Binary patching and DLL injection
+- Defeating packers and obfuscation
+- Analyzing commercial protectors (VMProtect, Themida)
+- Professional-level reversing techniques
+
+---
+
+## 🎯 Quick Start Guide
+
+### For Machine Learning:
+1. **Start here:** [ML Course README](ml/README.md)
+2. **Setup:** Follow the installation instructions
+3. **Begin:** [Lesson 1: Python & NumPy Fundamentals](ml/lesson_01_python_numpy.md)
+4. **Reference:** [ML Glossary](ml/GLOSSARY.md) for terminology
+
+### For Binary Reverse Engineering:
+1. **Start here:** [RE Course README](reverse-engineering/README.md)
+2. **Choose your level:**
+   - **Beginner:** [Beginner Course](reverse-engineering/beginner/README.md) - Start here if new to reversing
+   - **Intermediate:** [Intermediate Course](reverse-engineering/intermediate/README.md) - After completing Beginner
+   - **Advanced:** [Advanced Course](reverse-engineering/advanced/README.md) - Professional-level skills
+3. **Setup:** Run the [installation script](reverse-engineering/beginner/install_tools.ps1)
+4. **Begin:** [Lesson 1: Setting up a Safe Reversing Lab](reverse-engineering/beginner/lesson_01_lab_setup.md)
+
+---
+
+## 📖 Complete Index
+
+For a comprehensive index of all lessons and resources, see:
+- **[Complete Course Index](INDEX.md)** - Full navigation for both courses
+- **[ML Course Index](ml/README.md)** - All ML lessons and resources
+- **[RE Course Index](reverse-engineering/INDEX.md)** - All RE lessons and resources
+
+---
+
+## ✨ Key Features
+
+### Machine Learning Course
+✅ 13 comprehensive lessons with theory and practical code  
+✅ Progressive difficulty from basics to advanced RL  
+✅ Real-world game AI applications  
+✅ Exercises and solutions for every lesson  
+✅ Glossary with links to relevant lessons  
+
+### Binary Reverse Engineering Course
+✅ 24 comprehensive lessons across 3 levels  
+✅ Full course content (no previews or placeholders)  
+✅ 72+ practical exercises with detailed solutions  
+✅ Industry-standard tools (Binary Ninja, x64dbg, Python)  
+✅ Ethical focus on educational applications  
+✅ Automated installation script for all tools  
+
+---
+
+## 🛠️ Tools & Technologies
+
+### Machine Learning
 - Python 3.8+
 - PyTorch
 - NumPy, Matplotlib
 - OpenAI Gym / Gymnasium
-- Jupyter Notebook (recommended)
+- Jupyter Notebook
 
-## 🗺️ Curriculum Structure
-
-### **Phase 1: Foundations (Weeks 1-2)**
-
-| Lesson | Topic | Time | Key Skills |
-|--------|-------|------|------------|
-| [Lesson 1](lesson_01_python_numpy.md) | Python & NumPy Fundamentals | 4-5h | Arrays, vectorization, scientific computing |
-| [Lesson 2](lesson_02_pytorch_intro.md) | Introduction to PyTorch | 4-6h | Tensors, autograd, GPU acceleration |
-| [Lesson 3](lesson_03_supervised_learning.md) | Supervised Learning Fundamentals | 4-5h | Training loops, loss functions, optimization |
-| [Lesson 4](lesson_04_classifier.md) | Building a Classifier | 5-6h | End-to-end neural network training |
-
-### **Phase 2: Reinforcement Learning Basics (Weeks 3-5)**
-
-| Lesson | Topic | Time | Key Skills |
-|--------|-------|------|------------|
-| [Lesson 5](lesson_05_rl_theory.md) | RL Theory & MDPs | 5-7h | Markov processes, value functions, Bellman equations |
-| [Lesson 6](lesson_06_tabular_qlearning.md) | Tabular Q-Learning | 4-6h | Q-tables, exploration vs exploitation |
-| [Lesson 7](lesson_07_dqn.md) | Deep Q-Networks (DQN) | 6-8h | Experience replay, target networks |
-| [Lesson 8](lesson_08_policy_gradients.md) | Policy Gradients & PPO | 6-8h | REINFORCE, actor-critic, PPO algorithm |
-
-### **Phase 3: Practical Game AI (Weeks 6-8)**
-
-| Lesson | Topic | Time | Key Skills |
-|--------|-------|------|------------|
-| [Lesson 9](lesson_09_gym_continuous.md) | Gym & Continuous Control | 4-5h | Environment APIs, continuous action spaces |
-| [Lesson 10](lesson_10_game_states.md) | Game State Representation | 5-6h | Feature engineering, state preprocessing |
-| [Lesson 11](lesson_11_advanced_rl.md) | Advanced RL Concepts | 6-8h | Reward shaping, curriculum learning, parallelization |
-
-### **Phase 4: Complex Environments (Weeks 9-12)**
-
-| Lesson | Topic | Time | Key Skills |
-|--------|-------|------|------------|
-| [Lesson 12](lesson_12_complete_agent.md) | Complete 2D/3D Game Agent | 8-10h | Integration, debugging, hyperparameter tuning |
-| [Lesson 13](lesson_13_rocket_league.md) | Scaling to Rocket League | 8-12h | RLGym, multi-agent RL, deployment |
-
-## 🎯 Learning Path
-
-```
-Python/NumPy → PyTorch → Supervised Learning → Simple Classifier
-                                                       ↓
-RL Theory → Q-Learning → DQN → Policy Gradients → PPO
-                                                       ↓
-        Gym Environments → Feature Engineering → Advanced Techniques
-                                                       ↓
-                              2D/3D Game AI → Rocket League Bots
-```
-
-## 📖 How to Use This Guide
-
-1. **Work sequentially** - Each lesson builds on previous concepts
-2. **Code along** - Type out examples, don't just read them
-3. **Do ALL exercises** - They're designed to test understanding
-4. **Experiment** - Modify code, break things, see what happens
-5. **Join communities** - Share progress on Discord/Reddit RL communities
-6. **Use the glossary** - If you see unfamiliar ML/RL terminology, consult the [Glossary](GLOSSARY.md) for definitions and links to the relevant lessons.
-
-## 🛠️ Setup Instructions
-
-### Quick Start
-
-```bash
-# Create virtual environment
-python -m venv rl_workshop
-source rl_workshop/bin/activate  # On Windows: rl_workshop\Scripts\activate
-
-# Install core dependencies
-pip install torch torchvision numpy matplotlib jupyter
-pip install gymnasium[classic-control]
-pip install tensorboard
-
-# For later lessons
-pip install stable-baselines3
-pip install rlgym  # For Rocket League (Lesson 13)
-```
-
-### Recommended Directory Structure
-
-```
-rl-workshop/
-├── notebooks/          # Jupyter notebooks for experiments
-├── code/              # Your implementations
-│   ├── lesson_01/
-│   ├── lesson_02/
-│   └── ...
-├── models/            # Saved model checkpoints
-└── logs/              # Training logs and tensorboard data
-```
-
-## 📚 Core References
-
-### Textbooks
-- **Sutton & Barto** - "Reinforcement Learning: An Introduction" (2nd ed.) - [Free PDF](http://incompleteideas.net/book/the-book-2nd.html)
-- **Goodfellow et al.** - "Deep Learning" - [Free online](https://www.deeplearningbook.org/)
-
-### Online Courses (supplementary)
-- **Spinning Up in Deep RL** (OpenAI) - https://spinningup.openai.com/
-- **David Silver's RL Course** (DeepMind) - https://www.deepmind.com/learning-resources/introduction-to-reinforcement-learning-with-david-silver
-
-### Communities
-- r/reinforcementlearning
-- r/learnmachinelearning
-- OpenAI Discord
-- Hugging Face Discord
-
-## 🎓 Assessment Milestones
-
-Track your progress with these milestones:
-
-- [ ] **Week 2:** Train a neural network to classify MNIST digits (>95% accuracy)
-- [ ] **Week 4:** Implement Q-learning that solves FrozenLake-v1
-- [ ] **Week 6:** Train a DQN agent that masters CartPole-v1
-- [ ] **Week 8:** Implement PPO from scratch and solve LunarLander
-- [ ] **Week 10:** Build an agent for a custom 2D game
-- [ ] **Week 12:** Train a basic Rocket League bot that can hit the ball
-
-## 💡 Tips for Success
-
-1. **Be patient with training** - RL agents can take hours/days to train
-2. **Visualize everything** - Plot rewards, losses, Q-values
-3. **Start simple** - Get basic versions working before adding complexity
-4. **Debug systematically** - Use print statements, tensorboard, unit tests
-5. **Manage expectations** - Not every algorithm works on every problem
-
-## 🚨 Common Pitfalls
-
-- Skipping theory → not understanding why things fail
-- Not normalizing inputs → unstable training
-- Wrong learning rates → divergence or no learning
-- Insufficient exploration → suboptimal policies
-- Not saving checkpoints → losing trained models
-
-## 🎮 Final Project Ideas
-
-After completing the curriculum, try these projects:
-
-1. **Retro Games** - Train agents for Atari/SNES games using Gymnasium
-2. **Custom Environments** - Build your own game and train an agent
-3. **Multi-agent Competition** - Create agents that compete against each other
-4. **Real-world Control** - Sim-to-real transfer for robotics
-5. **Rocket League Tournament** - Compete in RLBot tournaments
-
-## 📞 Getting Help
-
-- **Debugging:** Each lesson has a troubleshooting section
-- **Theory Questions:** Check Sutton & Barto or post on r/reinforcementlearning
-- **Code Issues:** Include error messages and minimal reproducible examples
-- **Stuck on Exercises:** Try for 30min, then check solutions (coming soon)
-
-## 🔄 Updates and Contributions
-
-This is a living curriculum. As you progress:
-- Note what works well and what's confusing
-- Suggest improvements via issues/PRs
-- Share your project results!
+### Binary Reverse Engineering
+- Binary Ninja (disassembler/decompiler)
+- x64dbg (debugger)
+- PE-bear, CFF Explorer (PE utilities)
+- Process Explorer, ProcMon (system inspection)
+- Python (scripting)
+- Rust (building test binaries)
 
 ---
 
-**Ready to start?** Head to [Lesson 1: Python & NumPy Fundamentals](lesson_01_python_numpy.md)
+## 📊 Course Statistics
 
-**Questions before starting?** Review the setup instructions above or ask in the communities listed.
+| Aspect | ML Course | RE Course |
+|--------|-----------|-----------|
+| Total Lessons | 13 | 24 |
+| Experience Levels | 1 (progressive) | 3 (Beginner, Intermediate, Advanced) |
+| Total Exercises | 40+ | 72+ |
+| Estimated Duration | 60-80 hours | 30-45 hours |
+| Capstone Projects | 1 | 3 (one per level) |
 
-Good luck on your RL journey! 🚀
+---
+
+## 🚀 Getting Started
+
+**Choose your path:**
+
+1. **Machine Learning First:** Start with [ML Course README](ml/README.md)
+2. **Reverse Engineering First:** Start with [RE Course README](reverse-engineering/README.md)
+3. **Both Courses:** Use the [Complete Index](INDEX.md) to navigate both
+
+---
+
+## 📝 Course Philosophy
+
+Both courses follow these principles:
+
+- **Hands-on learning:** Theory + practical exercises
+- **Progressive complexity:** Build skills systematically
+- **Real-world applications:** Practical, applicable knowledge
+- **Complete content:** No "see full course" placeholders
+- **Ethical focus:** Educational use only
+- **Community-driven:** Learn from and contribute to the community
+
+---
+
+## 🔗 Navigation
+
+- **[Complete Index](INDEX.md)** - Master index for all courses
+- **[ML Course](ml/README.md)** - Reinforcement Learning Workshop
+- **[RE Course](reverse-engineering/README.md)** - Binary Reverse Engineering
+- **[ML Glossary](ml/GLOSSARY.md)** - ML/RL terminology reference
+- **[RE Getting Started](reverse-engineering/GETTING_STARTED.md)** - RE setup guide
+
+---
+
+**Ready to start learning? Choose your course above and begin your journey!** 🎓
+
