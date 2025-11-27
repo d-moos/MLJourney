@@ -88,21 +88,31 @@ rustc --crate-type cdylib my_dll.rs
 
 ## DLL Injection
 
-**DLL injection** is the process of loading your DLL into a running process. There are several techniques:
+**DLL injection** is the technique of forcing a running process to load your custom DLL, giving you the ability to execute code within that process's address space. This is fundamental to game hacking, process monitoring, and many other reverse engineering tasks. Once your DLL is loaded in the target process, it has full access to the process's memory and can hook functions, modify data, or implement entirely new functionality.
 
 ### Method 1: CreateRemoteThread
 
-1. Open the target process with `OpenProcess`
-2. Allocate memory in the target process with `VirtualAllocEx`
-3. Write the DLL path to that memory with `WriteProcessMemory`
-4. Create a remote thread that calls `LoadLibraryA` with the DLL path
-5. The target process loads your DLL
+The CreateRemoteThread injection method is one of the most common and well-documented DLL injection techniques. It works by creating a new thread in the target process that calls `LoadLibraryA` to load your DLL. Here's how the process works in detail.
+
+First, you need to open the target process with `OpenProcess`. This Windows API function requires the process ID (which you can obtain from Task Manager or programmatically) and returns a handle to the process. You need to request sufficient access rights—specifically, `PROCESS_CREATE_THREAD`, `PROCESS_VM_OPERATION`, `PROCESS_VM_WRITE`, and `PROCESS_VM_READ`. These permissions allow you to create threads, allocate memory, and write to the process's memory.
+
+Next, allocate memory in the target process using `VirtualAllocEx`. This function allocates a region of memory within the target process's address space. You need enough space to store the full path to your DLL (typically a few hundred bytes is sufficient). The allocated memory should have read/write permissions.
+
+Once you have allocated memory, write the DLL path to that memory using `WriteProcessMemory`. This function copies data from your process into the target process. You're writing the full path to your DLL (as a null-terminated string) into the memory you just allocated. For example, you might write "C:\\Users\\YourName\\my_hook.dll" into the target process's memory.
+
+Now comes the clever part: create a remote thread in the target process using `CreateRemoteThread`. The thread's start address should be the address of `LoadLibraryA` (which you can obtain using `GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA")`), and the thread parameter should be the address of the DLL path you wrote to the target process's memory. When this thread starts, it effectively calls `LoadLibraryA("C:\\Users\\YourName\\my_hook.dll")` within the target process, causing the target process to load your DLL.
+
+Finally, the target process loads your DLL, and your `DllMain` function is called with `DLL_PROCESS_ATTACH`. At this point, your code is running inside the target process, and you can begin hooking functions or modifying behavior.
 
 ### Method 2: SetWindowsHookEx
 
-1. Create a DLL with a hook function
-2. Use `SetWindowsHookEx` to install the hook
-3. The system automatically injects your DLL into processes that trigger the hook
+The `SetWindowsHookEx` injection method is a more legitimate technique that leverages Windows's built-in hooking mechanism. Unlike CreateRemoteThread, which is often flagged by anti-cheat systems, SetWindowsHookEx is a documented Windows API designed for monitoring system events. However, it has a useful side effect: Windows automatically injects your DLL into any process that triggers your hook.
+
+To use this method, you first create a DLL that exports a hook function. This function must match the signature required by the type of hook you're installing (for example, a keyboard hook, mouse hook, or window procedure hook). The hook function is called by Windows whenever the specified event occurs—for instance, whenever a key is pressed if you're using a keyboard hook.
+
+Next, you call `SetWindowsHookEx` from your injector program, specifying the type of hook (like `WH_KEYBOARD` for keyboard events), the address of your hook function, the handle to your DLL, and the thread ID to hook (or 0 to hook all threads). When you install a global hook (thread ID = 0), Windows automatically injects your DLL into every process that receives the hooked events.
+
+The system handles the injection automatically. When a process receives an event that triggers your hook (like a keystroke), Windows loads your DLL into that process and calls your hook function. This gives you code execution within the target process, and from there you can install additional hooks or modify behavior. This method is stealthier than CreateRemoteThread but is limited to processes that receive the events you're hooking.
 
 ## Hooking Functions from a DLL
 
