@@ -31,23 +31,21 @@ Before starting this lesson, you should:
 
 ## The PEB (Process Environment Block)
 
-The **PEB** is a structure maintained by Windows that contains information about a process. It includes:
-- The image base (where the executable is loaded)
-- The list of loaded modules (DLLs)
-- The heap base
-- Environment variables
-- Command-line arguments
+The **Process Environment Block (PEB)** is one of the most important data structures in Windows reverse engineering. It's a structure maintained by Windows in user-mode memory that contains critical information about a running process. Understanding the PEB is essential because malware and protected software frequently access it to gather information about the process environment, detect debuggers, or locate loaded modules.
+
+The PEB contains a wealth of information that's useful for both legitimate programs and malware. It includes the image base address (where the executable is loaded in memory), which is essential for calculating absolute addresses from relative addresses. It contains the list of loaded modules (DLLs), allowing programs to enumerate what libraries are loaded without calling Windows APIs. The heap base address is stored here, providing access to the process's heap. Environment variables and command-line arguments are also accessible through the PEB, making it a one-stop shop for process information.
 
 ### Accessing the PEB
 
-In x86-64, the PEB is accessed through the **GS register**:
-- `GS:[0x60]` points to the PEB
-- The PEB is at `GS:[0x60]` (on x64)
+On x86-64 Windows, the PEB is accessed through the **GS segment register**, which is a special CPU register that points to thread-local storage. The GS register is used differently on x64 than on x86 (where the FS register is used instead). Specifically, the address at `GS:[0x60]` contains a pointer to the PEB structure.
 
-In assembly:
+This access method is consistent across all x64 Windows processes, making it a reliable way to locate the PEB. In assembly, accessing the PEB looks like this:
+
 ```asm
 mov rax, gs:[0x60]    ; RAX now points to the PEB
 ```
+
+After this instruction, RAX contains the address of the PEB structure, and you can access any field within it by adding the appropriate offset. For example, to check the `BeingDebugged` flag at offset 0x02, you would use `mov al, [rax+0x02]`.
 
 ### PEB Structure
 
@@ -79,24 +77,31 @@ typedef struct _PEB {
 
 ### Important PEB Fields
 
-- **BeingDebugged** (offset 0x02): Set to 1 if the process is being debugged
-- **Ldr** (offset 0x10): Points to the loader data, which contains the module list
-- **ImageBaseAddress** (offset 0x10): The base address where the executable is loaded
+The PEB structure contains many fields, but several are particularly important for reverse engineering and are frequently accessed by both legitimate software and malware.
+
+**BeingDebugged** (offset 0x02) is a single byte that's set to 1 if the process is being debugged, and 0 otherwise. This is the field that `IsDebuggerPresent()` checks. Malware frequently reads this field directly to detect debuggers without calling the API, making it harder to hook. You can bypass this by manually setting the byte to 0 in your debugger.
+
+**Ldr** (offset 0x18 on x64) is a pointer to the `PEB_LDR_DATA` structure, which contains the loader data. This structure includes linked lists of all loaded modules (DLLs), organized in three different orders: load order, memory order, and initialization order. By traversing these lists, you can enumerate all DLLs loaded in the process without calling any Windows APIs—a technique commonly used by malware to locate functions for dynamic resolution.
+
+**ImageBaseAddress** (offset 0x10) contains the base address where the main executable is loaded in memory. This is useful for calculating absolute addresses from relative virtual addresses (RVAs) found in the PE file. With ASLR (Address Space Layout Randomization) enabled, this value changes each time the process runs, but you can always find the current base address by reading this field.
 
 ## The TEB (Thread Environment Block)
 
-The **TEB** is a structure that contains thread-specific information. Each thread has its own TEB.
+The **Thread Environment Block (TEB)** is the thread-level equivalent of the PEB. While the PEB contains process-wide information, the TEB contains information specific to a single thread. Every thread in a process has its own TEB, making it essential for understanding multi-threaded programs and thread-local storage.
+
+The TEB is particularly important for reverse engineering because it provides access to thread-local data, exception handlers, and the thread's stack boundaries. Malware often uses the TEB to access thread-specific information or to manipulate exception handling.
 
 ### Accessing the TEB
 
-In x86-64, the TEB is accessed through the **GS register**:
-- `GS:[0x30]` points to the TEB
-- The TEB is at `GS:[0x30]` (on x64)
+Like the PEB, the TEB is accessed through the GS segment register on x64 Windows. However, it's at a different offset: `GS:[0x30]` contains a pointer to the current thread's TEB. This means each thread, when it accesses `GS:[0x30]`, gets a pointer to its own TEB, not to other threads' TEBs.
 
-In assembly:
+In assembly, accessing the TEB looks like this:
+
 ```asm
-mov rax, gs:[0x30]    ; RAX now points to the TEB
+mov rax, gs:[0x30]    ; RAX now points to the current thread's TEB
 ```
+
+Interestingly, the TEB also contains a pointer back to the PEB at offset 0x60, providing an alternative way to access the PEB: `mov rax, gs:[0x30]` followed by `mov rax, [rax+0x60]` will give you the PEB address.
 
 ### TEB Structure
 
@@ -118,13 +123,21 @@ typedef struct _TEB {
 
 ### Important TEB Fields
 
-- **ProcessEnvironmentBlock** (offset 0x60): Points to the PEB
-- **TlsSlots**: Thread Local Storage slots
-- **LastErrorValue**: The last error code (from GetLastError)
+The TEB contains numerous fields, but several are particularly relevant for reverse engineering and understanding program behavior.
+
+**ProcessEnvironmentBlock** (offset 0x60) is a pointer back to the PEB. This provides an alternative way to access the PEB from the TEB, which can be useful in certain contexts. Some code accesses the PEB through the TEB rather than directly through `GS:[0x60]`, so recognizing this pattern is important.
+
+**TlsSlots** (offset varies) is an array of 64 pointers used for Thread Local Storage (TLS). TLS allows each thread to have its own copy of certain variables. When you see code accessing `TlsSlots`, it's typically reading or writing thread-specific data. Malware sometimes uses TLS to store per-thread state or to hide data from analysis.
+
+**LastErrorValue** (offset varies) stores the last error code set by Windows APIs. This is the value returned by `GetLastError()`. Understanding that this is stored in the TEB explains why `GetLastError()` is thread-safe—each thread has its own error value. When debugging, you can inspect this field to see what error occurred without calling `GetLastError()`.
+
+**StackBase** and **StackLimit** (offsets vary) define the boundaries of the thread's stack. These are useful for understanding stack overflows, validating stack pointers, or implementing custom stack walking. Some anti-debugging techniques check these values to detect stack manipulation.
 
 ## Virtual Memory Layout
 
-Windows processes have a virtual memory layout that looks like:
+Understanding the virtual memory layout of Windows processes is crucial for reverse engineering because it helps you understand where different components are loaded and why certain addresses look the way they do. Windows uses a 64-bit address space on x64 systems, but not all of it is usable—the address space is divided into user-mode and kernel-mode regions.
+
+The virtual memory layout on x64 Windows looks like this:
 
 ```
 0x0000000000000000 - 0x0000000000001000  : NULL page (inaccessible)
@@ -135,13 +148,17 @@ Windows processes have a virtual memory layout that looks like:
 0x8000000000000000 - 0xFFFFFFFFFFFFFFFF  : Kernel-mode memory (inaccessible from user mode)
 ```
 
+The NULL page (the first 4KB) is always inaccessible, which is why dereferencing a NULL pointer causes an access violation. This is a deliberate design choice to catch NULL pointer bugs.
+
+User-mode memory occupies the lower half of the address space (addresses starting with 0x0000...). This is where your program's code, data, heap, and stack live. Any attempt to access kernel-mode memory (addresses starting with 0x8000... or higher) from user mode will cause an access violation.
+
 ### Image Base
 
-The **image base** is where the executable is loaded. By default:
-- 32-bit executables: 0x00400000
-- 64-bit executables: 0x140000000
+The **image base** is the address where the executable is loaded into memory. This is a critical concept because all addresses in the PE file are relative to the image base. When you see an RVA (Relative Virtual Address) in the PE file, you add it to the image base to get the actual memory address.
 
-However, with ASLR (Address Space Layout Randomization), the image base is randomized.
+By default, Windows uses predictable image base addresses. For 32-bit executables, the default is 0x00400000, which is why you often see addresses like 0x00401000 in x86 programs. For 64-bit executables, the default is 0x140000000, which is why x64 programs typically have addresses like 0x140001000.
+
+However, with ASLR (Address Space Layout Randomization) enabled—which is the default for modern Windows binaries—the image base is randomized each time the process starts. This security feature makes it harder for exploits to predict where code will be located. When reversing ASLR-enabled binaries, you need to account for the fact that addresses will be different each time you run the program. You can find the actual image base by reading the PEB's `ImageBaseAddress` field or by checking the base address in your debugger.
 
 ## Module Lists
 

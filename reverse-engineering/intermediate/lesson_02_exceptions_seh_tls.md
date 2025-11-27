@@ -58,32 +58,44 @@ This compiles to assembly that sets up an exception handler frame.
 
 ### Recognizing SEH in Disassembly
 
-When you see SEH in disassembly, you'll see:
-- A `push` of an exception handler address
-- A `push` of the previous exception handler
-- A `mov` to set up the exception handler chain
+When you're reverse engineering a binary and encounter SEH, you'll see characteristic assembly patterns that set up the exception handling infrastructure. Understanding these patterns helps you identify where exception handlers are installed and what they do.
+
+In disassembly, SEH setup typically involves several steps. First, you'll see a `push` instruction that pushes the address of an exception handler function onto the stack. This is the function that will be called if an exception occurs. Next, you'll see another `push` that pushes the address of the previous exception handler in the chain—this maintains the linked list of handlers. Finally, you'll see a `mov` instruction that updates the FS (on x86) or GS (on x64) segment register to point to the new exception handler frame, effectively adding it to the chain.
+
+The pattern typically looks like this in x86 assembly:
+```asm
+push offset exception_handler    ; Push handler address
+push fs:[0]                       ; Push previous handler
+mov fs:[0], esp                   ; Set new handler as current
+```
+
+On x64, the pattern is different because x64 uses table-based exception handling rather than frame-based SEH, but you'll still see references to exception handler tables in the PE file's exception directory.
 
 ## TLS Callbacks
 
-**TLS callbacks** are functions that run before the main entry point. They're useful for:
-- Initializing thread-local data
-- Running anti-debugging code
-- Unpacking code
+**TLS (Thread Local Storage) callbacks** are one of the most important—and often overlooked—features in Windows PE files. They're functions that execute before the main entry point, making them perfect for initialization code, anti-debugging tricks, and unpacking routines. Many reverse engineers miss TLS callbacks because they focus on the entry point, not realizing that code has already executed before they even reach `main`.
+
+TLS callbacks are particularly useful for several purposes. They're designed for initializing thread-local data—variables that each thread has its own copy of. However, malware authors have discovered that TLS callbacks are perfect for running anti-debugging code before the debugger reaches the entry point. If you set a breakpoint at the entry point, the anti-debugging code in the TLS callback has already run, potentially detecting your debugger and altering the program's behavior. Packers also use TLS callbacks to unpack code before the main program runs, making it harder to find the unpacking routine.
 
 ### How TLS Callbacks Work
 
-1. The PE file has a TLS directory
-2. The TLS directory contains a list of callback functions
-3. When a thread is created, Windows calls all TLS callbacks
-4. After all TLS callbacks complete, the main entry point is called
+The TLS callback mechanism is built into the Windows PE loader and operates automatically when a process or thread is created. Understanding the execution flow is crucial for effective reverse engineering.
+
+The process begins with the PE file containing a TLS directory in its optional header. This directory is one of the data directories (like the import directory or export directory) and contains information about thread-local storage. Within the TLS directory is a pointer to an array of callback function addresses. This array is null-terminated, meaning it ends with a zero pointer.
+
+When Windows creates a new thread (including the initial thread when the process starts), it checks if the PE file has a TLS directory. If it does, Windows walks through the array of TLS callback addresses and calls each callback function in order. Each callback is called with parameters indicating why it's being called (thread attach, thread detach, process attach, or process detach), similar to `DllMain`. Only after all TLS callbacks have completed does Windows transfer control to the main entry point specified in the PE header.
+
+This means TLS callbacks execute before your debugger's entry point breakpoint, before any initialization code you might expect, and before any anti-anti-debugging plugins have a chance to patch the binary. This makes them extremely powerful for both legitimate initialization and malicious anti-analysis.
 
 ### Recognizing TLS Callbacks
 
-In Binary Ninja:
-1. Look at the PE header
-2. Find the TLS directory
-3. The TLS directory contains a list of callback addresses
-4. Each callback is a function that runs before main
+Identifying TLS callbacks requires examining the PE file structure, which you can do in Binary Ninja or with PE analysis tools like PE-bear.
+
+In Binary Ninja, start by examining the PE header. Navigate to the optional header's data directories section and look for the TLS directory entry. If the TLS directory's RVA (Relative Virtual Address) is non-zero, the binary has TLS data and potentially TLS callbacks.
+
+Follow the TLS directory RVA to the TLS directory structure itself. This structure contains several fields, but the most important is the `AddressOfCallBacks` field. This field contains a pointer (an absolute virtual address, not an RVA) to an array of callback function pointers.
+
+Navigate to the address specified in `AddressOfCallBacks`. You'll see an array of 8-byte pointers (on x64) or 4-byte pointers (on x86). Each non-zero pointer is the address of a TLS callback function. The array ends with a zero pointer. Click on each callback address to jump to the callback function and analyze what it does. These functions run before the main entry point, so any anti-debugging or unpacking code here executes first.
 
 ### Example TLS Callback
 

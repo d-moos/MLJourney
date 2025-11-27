@@ -188,7 +188,18 @@ extern "system" fn hooked_get_std_handle(handle: u32) -> *mut std::ffi::c_void {
 
 ### Solution 1: Create a Simple DLL
 
-A simple DLL in Rust:
+Creating a DLL in Rust requires understanding the DLL entry point and proper configuration. Here's a complete working example:
+
+First, create a new Rust library project with `cargo new --lib my_dll`. Then, modify your `Cargo.toml` to specify that you want to build a C-compatible dynamic library:
+
+```toml
+[lib]
+crate-type = ["cdylib"]
+```
+
+The `cdylib` crate type tells Rust to create a C-compatible dynamic library (DLL on Windows). This is different from `dylib`, which creates a Rust-specific dynamic library.
+
+Now, in your `lib.rs`, implement the `DllMain` function:
 
 ```rust
 #[no_mangle]
@@ -197,28 +208,128 @@ pub extern "system" fn DllMain(
     call_reason: u32,
     _reserved: *mut std::ffi::c_void,
 ) -> i32 {
-    if call_reason == 1 {
+    if call_reason == 1 {  // DLL_PROCESS_ATTACH
         println!("DLL loaded!");
+    } else if call_reason == 0 {  // DLL_PROCESS_DETACH
+        println!("DLL unloaded!");
     }
-    1
+    1  // Return TRUE
 }
 ```
 
+The `#[no_mangle]` attribute prevents Rust from mangling the function name, ensuring it's exported as `DllMain` exactly. The `extern "system"` specifies the Windows calling convention. The function returns 1 (TRUE) to indicate successful initialization.
+
+When you compile with `cargo build --release`, you'll find your DLL at `target/release/my_dll.dll`. You can verify it's a valid DLL by loading it in a PE viewer or by attempting to inject it into a process.
+
 ### Solution 2: Inject a DLL
 
-An injector program would:
-1. Find the target process by name
-2. Open it with `OpenProcess`
-3. Allocate memory with `VirtualAllocEx`
-4. Write the DLL path with `WriteProcessMemory`
-5. Create a remote thread with `CreateRemoteThread` that calls `LoadLibraryA`
+DLL injection requires careful use of Windows APIs to manipulate another process's memory. Here's a detailed walkthrough of implementing a CreateRemoteThread injector:
+
+First, you need to find the target process. You can do this by enumerating processes with `CreateToolhelp32Snapshot` and `Process32Next`, searching for a process by name. Once you have the process ID, open the process with `OpenProcess`, requesting the necessary permissions:
+
+```rust
+let process_handle = OpenProcess(
+    PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ,
+    false,
+    target_pid
+);
+```
+
+Next, allocate memory in the target process to store the DLL path. The path must be a full absolute path (like "C:\\Users\\YourName\\my_dll.dll"):
+
+```rust
+let dll_path = "C:\\path\\to\\my_dll.dll\0";  // Null-terminated
+let path_size = dll_path.len();
+let remote_memory = VirtualAllocEx(
+    process_handle,
+    null_mut(),
+    path_size,
+    MEM_COMMIT | MEM_RESERVE,
+    PAGE_READWRITE
+);
+```
+
+Write the DLL path to the allocated memory:
+
+```rust
+WriteProcessMemory(
+    process_handle,
+    remote_memory,
+    dll_path.as_ptr() as *const _,
+    path_size,
+    null_mut()
+);
+```
+
+Now comes the clever part: get the address of `LoadLibraryA` from `kernel32.dll`. This address is the same in all processes (due to ASLR being consistent across processes), so you can get it from your own process:
+
+```rust
+let kernel32 = GetModuleHandleA("kernel32.dll\0".as_ptr() as *const i8);
+let load_library_addr = GetProcAddress(kernel32, "LoadLibraryA\0".as_ptr() as *const i8);
+```
+
+Finally, create a remote thread that calls `LoadLibraryA` with the DLL path as the argument:
+
+```rust
+let thread_handle = CreateRemoteThread(
+    process_handle,
+    null_mut(),
+    0,
+    std::mem::transmute(load_library_addr),  // Thread start address
+    remote_memory,  // Thread parameter (DLL path)
+    0,
+    null_mut()
+);
+```
+
+When this thread starts in the target process, it executes `LoadLibraryA("C:\\path\\to\\my_dll.dll")`, causing the target process to load your DLL. Your `DllMain` function will be called with `DLL_PROCESS_ATTACH`, and you'll see "DLL loaded!" printed (assuming the target process has a console or you're using a message box instead of `println!`).
 
 ### Solution 3: Hook a Function
 
-A hook function would:
-1. Save the original function address
-2. Replace it with the hook function
-3. In the hook, call the original function and return its result
+Hooking a function from within a DLL requires saving the original function address, replacing it with your hook, and ensuring your hook can call the original. Here's a detailed implementation for hooking `GetStdHandle`:
+
+First, define a type for the original function signature:
+
+```rust
+type GetStdHandleFunc = extern "system" fn(u32) -> *mut std::ffi::c_void;
+static mut ORIGINAL_GET_STD_HANDLE: Option<GetStdHandleFunc> = None;
+```
+
+Implement your hook function:
+
+```rust
+extern "system" fn hooked_get_std_handle(std_handle: u32) -> *mut std::ffi::c_void {
+    println!("GetStdHandle called with: {}", std_handle);
+
+    // Call the original function
+    unsafe {
+        if let Some(original) = ORIGINAL_GET_STD_HANDLE {
+            original(std_handle)
+        } else {
+            null_mut()
+        }
+    }
+}
+```
+
+In your `DllMain`, install the hook when the DLL is loaded:
+
+```rust
+if call_reason == 1 {  // DLL_PROCESS_ATTACH
+    unsafe {
+        // Get the address of the original GetStdHandle
+        let kernel32 = GetModuleHandleA("kernel32.dll\0".as_ptr() as *const i8);
+        let original_addr = GetProcAddress(kernel32, "GetStdHandle\0".as_ptr() as *const i8);
+        ORIGINAL_GET_STD_HANDLE = Some(std::mem::transmute(original_addr));
+
+        // Install the hook (this is simplified - real hooking requires more work)
+        // You would typically use a hooking library like MinHook or implement
+        // inline hooking by overwriting the first bytes of GetStdHandle with a jump
+    }
+}
+```
+
+For a complete implementation, you'd typically use a hooking library like MinHook (available as a Rust crate) which handles the complex details of inline hooking: saving the original bytes, writing a jump instruction, creating a trampoline, and handling thread safety. The basic principle is that you overwrite the first 5+ bytes of `GetStdHandle` with a `jmp` instruction to your hook function, save those original bytes in a trampoline, and have your hook call the trampoline to execute the original function.
 
 ## Summary
 
